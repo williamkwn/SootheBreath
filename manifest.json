@@ -1,5 +1,5 @@
-﻿{
-  "name": "BreathGuide COPD — 實時呼吸視覺生物反饋系統",
+{
+  "name": "BreathGuide — 實時呼吸視覺生物反饋系統",
   "short_name": "BreathGuide",
   "description": "實時噘唇呼吸 (PLB) 與輔助呼吸肌代償視覺生物反饋 Progressive Web App",
   "start_url": "./index.html",

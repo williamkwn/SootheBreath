@@ -1,8 +1,7 @@
 /* ==========================================================================
-   BreathGuide COPD — PWA Clinical Stylesheet (style.css)
-   Compliant with Section 0 - Section 7 PRD Specifications
+   BreathGuide — 實時呼吸視覺生物反饋系統 (style.css)
+   v3.0 Aesthetic & Interactive Clinical UI Stylesheet
    ========================================================================== */
-
 
 /* Prevent mobile pull-to-refresh and rubber-band bounce */
 html, body {
@@ -12,6 +11,13 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Subtle clinical background grid glow */
+.bg-clinical-mesh {
+  background-color: #020617;
+  background-image: 
+    radial-gradient(at 15% 15%, rgba(16, 185, 129, 0.08) 0px, transparent 45%),
+    radial-gradient(at 85% 85%, rgba(6, 182, 212, 0.08) 0px, transparent 45%);
+}
 
 /* Mirror Mode transform for WebRTC Camera and Vision Canvas */
 .mirror-mode {
@@ -19,79 +25,91 @@ html, body {
   -webkit-transform: scaleX(-1);
 }
 
-
-/* High Contrast Bottom Banner Font & Pulse */
+/* High Contrast Bottom Banner Font & Pulse — STRICTLY hidden when .hidden is present */
 #bottom-banner {
-  font-size: clamp(28px, 3.2vw, 36px);
-  min-height: 4.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.5);
+  display: none;
 }
 
+#bottom-banner:not(.hidden) {
+  font-size: clamp(24px, 2.8vw, 34px);
+  min-height: 4.25rem;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 -10px 30px -5px rgba(0, 0, 0, 0.6);
+}
 
 /* Flashing red alert for shoulder hike / accessory muscle recruitment */
 @keyframes flash-shoulder-alert {
   0%, 100% {
-    border-color: rgba(239, 68, 68, 0.4);
-    background-color: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.45);
+    background-color: rgba(127, 29, 29, 0.25);
   }
   50% {
-    border-color: rgba(239, 68, 68, 1);
-    background-color: rgba(239, 68, 68, 0.35);
+    border-color: rgba(248, 113, 113, 1);
+    background-color: rgba(185, 28, 28, 0.55);
   }
 }
-
 
 .shoulder-alert-active {
   animation: flash-shoulder-alert 0.8s infinite ease-in-out;
   border-width: 2px !important;
 }
 
-
 /* Smooth Dynamic Breathing Pacer Sphere Animations */
 #pacer-ball {
   will-change: transform, background, box-shadow;
-  transition-property: transform, box-shadow, background-color;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.12s linear, box-shadow 0.3s ease, background 0.3s ease;
 }
-
-
-/* Expansion during Inhale */
-.pacer-inhale-state {
-  transform: scale(1.65) !important;
-  background: radial-gradient(circle at 35% 35%, #34d399, #059669) !important;
-  box-shadow: 0 0 50px rgba(16, 185, 129, 0.55), inset 0 0 20px rgba(255, 255, 255, 0.3) !important;
-}
-
-
-/* Contraction during Exhale (Pursed-Lip Blow) */
-.pacer-exhale-state {
-  transform: scale(0.85) !important;
-  background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7) !important;
-  box-shadow: 0 0 35px rgba(2, 132, 199, 0.45), inset 0 0 15px rgba(255, 255, 255, 0.2) !important;
-}
-
 
 /* Privacy Mesh Dark Canvas Background (#0f172a / slate-900) */
 .privacy-mesh-canvas {
   background-color: #0f172a !important;
 }
 
+/* Custom Range Slider Styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: #1e293b;
+  outline: none;
+  transition: background 0.2s;
+}
 
-/* Debug Drawer Scrollbar */
+input[type="range"]:hover {
+  background: #334155;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  border: 2px solid #ecfdf5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: #34d399;
+}
+
+/* Custom Scrollbars */
 #debug-drawer::-webkit-scrollbar,
 #list-history::-webkit-scrollbar {
   width: 6px;
 }
 
-
 #debug-drawer::-webkit-scrollbar-track,
 #list-history::-webkit-scrollbar-track {
   background: #0f172a;
 }
-
 
 #debug-drawer::-webkit-scrollbar-thumb,
 #list-history::-webkit-scrollbar-thumb {
@@ -99,20 +117,10 @@ html, body {
   border-radius: 9999px;
 }
 
-
 #debug-drawer::-webkit-scrollbar-thumb:hover,
 #list-history::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
-
-
-/* Input Range Accent Customization */
-input[type="range"] {
-  height: 6px;
-  border-radius: 9999px;
-  background-color: #1e293b;
-}
-
 
 /* iOS Safari Home Screen Fullscreen Adjustments */
 @supports (-webkit-touch-callout: none) {
