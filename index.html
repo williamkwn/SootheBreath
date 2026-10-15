@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-HK" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>BreathGuide COPD — 實時噘唇呼吸視覺生物反饋系統 (PWA)</title>
+  
+  <!-- PWA Settings -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BreathGuide COPD">
+  
+  <!-- Tailwind CSS Play CDN v3.4 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            clinical: {
+              blue: '#0284c7',
+              teal: '#0d9488',
+              alert: '#ef4444',
+              warning: '#f59e0b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Style Sheet -->
+  <link rel="stylesheet" href="style.css" onerror="this.onerror=null;this.href='css/style.css';">
+</head>
+<body class="h-full flex flex-col font-sans select-none overflow-x-hidden antialiased bg-slate-950">
+
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg text-white leading-tight flex items-center gap-2">
+          BreathGuide COPD
+          <span class="text-xs px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">PWA 臨床視覺版</span>
+        </h1>
+        <p class="text-xs text-slate-400">實時噘唇呼吸 (PLB) 與輔助肌代償生物反饋</p>
+      </div>
+    </div>
+
+
+    <!-- Privacy & Mode Indicators -->
+    <div class="flex items-center space-x-3">
+      <span class="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        100% 本地端邊緣 AI 推論 (零影像傳輸 / Zero Video Transmission)
+      </span>
+      <button id="btn-toggle-debug" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+        🛠️ 調試面板
+      </button>
+    </div>
+  </header>
+
+
+  <!-- Main Application Body -->
+  <main class="flex-1 relative overflow-hidden flex flex-col">
+
+
+    <!-- ========================================== -->
+    <!-- 1. STATE_IDLE: 準備與設定畫面 -->
+    <!-- ========================================== -->
+    <div id="state-idle" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 overflow-y-auto">
+      <div class="max-w-3xl w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6">
+        
+        <!-- Header & Value Prop -->
+        <div class="text-center space-y-2">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            🏥 慢性阻塞性肺病 (COPD) 呼吸復康科學訓練
+          </div>
+          <h2 class="text-2xl md:text-3xl font-extrabold text-white">噘唇呼吸 (Pursed-Lip Breathing) 視覺導引</h2>
+          <p class="text-slate-400 text-sm md:text-base leading-relaxed">
+            透過電腦視覺實時識別閉口鼻吸、噘唇吹氣嘴型 (PLB)，以及肩頸輔助肌聳肩代償，防止氣體滯留 (Air Trapping)。
+          </p>
+        </div>
+
+
+        <!-- Privacy Shield Banner -->
+        <div class="bg-slate-950/70 border border-emerald-500/30 rounded-2xl p-4 flex items-start space-x-3">
+          <div class="text-2xl text-emerald-400 shrink-0">🛡️</div>
+          <div class="text-xs md:text-sm text-slate-300 leading-snug">
+            <span class="font-bold text-emerald-300">隱私設計保證 (Privacy-by-Design)：</span>
+            鏡頭影像完全在你的本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕對不會錄影、不上傳雲端伺服器，並提供「去識別化黑底骨架網格」全面遮蓋五官與背景。
+          </div>
+        </div>
+
+
+        <!-- Training Configuration Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- Card A: 吸呼時長設定 -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <div class="flex justify-between items-center">
+              <label class="text-sm font-semibold text-slate-200">目標吸呼時間 (I:E 比率)</label>
+              <span id="label-ie-preset" class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">目標 1 : 2</span>
+            </div>
+            
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs text-slate-400">
+                <span>吸氣秒數 (Inhale)</span>
+                <span id="val-inhale-time" class="font-bold text-emerald-400">2.0 秒</span>
+              </div>
+              <input id="input-inhale-time" type="range" min="1.5" max="3.0" step="0.5" value="2.0" class="w-full accent-emerald-500 cursor-pointer">
+            </div>
+
+
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs text-slate-400">
+                <span>呼氣秒數 (Exhale)</span>
+                <span id="val-exhale-time" class="font-bold text-teal-400">4.0 秒</span>
+              </div>
+              <input id="input-exhale-time" type="range" min="3.0" max="8.0" step="0.5" value="4.0" class="w-full accent-teal-500 cursor-pointer">
+            </div>
+
+
+            <div class="flex gap-2 pt-1">
+              <button type="button" class="btn-ie-quick flex-1 py-1 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" data-in="2" data-ex="4">1 : 2</button>
+              <button type="button" class="btn-ie-quick flex-1 py-1 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" data-in="2" data-ex="6">1 : 3</button>
+              <button type="button" class="btn-ie-quick flex-1 py-1 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" data-in="2" data-ex="8">1 : 4</button>
+            </div>
+          </div>
+
+
+          <!-- Card B: 模式與語音設定 -->
+          <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <label class="text-sm font-semibold text-slate-200">視覺私隱與輔助功能</label>
+
+
+            <!-- Visual Privacy Mode Selector -->
+            <div class="space-y-1">
+              <span class="text-xs text-slate-400">視覺反饋顯示模式：</span>
+              <select id="select-privacy-mode" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="mirror">實時鏡像 + AR 輔助框 (Mirror Mode)</option>
+                <option value="privacy_mesh" selected>去識別化黑底骨架網格 (Privacy Mesh Mode)</option>
+                <option value="minimalist">純呼吸節奏球模式 (Minimalist Pacer Mode)</option>
+              </select>
+            </div>
+
+
+            <!-- Training Duration -->
+            <div class="space-y-1">
+              <span class="text-xs text-slate-400">訓練總時長：</span>
+              <select id="select-duration" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="60">1 分鐘 (快速練習)</option>
+                <option value="120" selected>2 分鐘 (常規復康訓練)</option>
+                <option value="180">3 分鐘 (深度深呼吸)</option>
+                <option value="300">5 分鐘 (強化臨床耐力)</option>
+              </select>
+            </div>
+
+
+            <!-- Cantonese TTS Voice Toggle -->
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs text-slate-300">廣東話 (zh-HK) 語音導航口令</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input id="toggle-voice" type="checkbox" checked class="sr-only peer">
+                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Start Training Button -->
+        <button id="btn-start" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-lg md:text-xl shadow-xl shadow-emerald-500/25 transition-all transform active:scale-[0.99] flex items-center justify-center gap-3">
+          <svg class="w-6 h-6 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          開始訓練 (啟動鏡頭)
+        </button>
+      </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 2. STATE_CALIBRATING: 3 秒坐姿基準校準畫面 -->
+    <!-- ========================================== -->
+    <div id="state-calibrating" class="hidden flex-1 relative flex flex-col items-center justify-center p-4 bg-slate-950">
+      
+      <!-- Video / Canvas Background Preview for Calibration -->
+      <div id="calib-container" class="relative w-full max-w-4xl aspect-[16/9] max-h-[70vh] bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center">
+        <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
+        <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100"></canvas>
+
+
+        <!-- Semi-transparent Alignment Silhouette Box -->
+        <div class="absolute inset-0 pointer-events-none flex flex-col items-center justify-center border-4 border-dashed border-teal-400/40 rounded-3xl m-6">
+          <!-- Head Oval Silhouette -->
+          <div class="w-44 h-56 rounded-[50%] border-2 border-teal-300/80 mb-2 bg-teal-500/5"></div>
+          <!-- Shoulder Line Silhouette -->
+          <div class="w-80 h-10 border-t-2 border-x-2 border-teal-300/80 rounded-t-3xl bg-teal-500/5"></div>
+        </div>
+
+
+        <!-- 3-Second Giant Countdown Overlay -->
+        <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 space-y-4">
+          <div id="calib-countdown" class="text-7xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 animate-bounce">
+            3
+          </div>
+          <h3 class="text-xl md:text-2xl font-bold text-white max-w-lg">
+            請自然坐直、沉肩放鬆、閉上嘴巴
+          </h3>
+          <p id="calib-status-text" class="text-emerald-300 text-sm md:text-base font-medium flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+            正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高低...
+          </p>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (65% / 35%) -->
+    <!-- ========================================== -->
+    <div id="state-training" class="hidden flex-1 flex flex-col md:flex-row overflow-hidden relative">
+
+
+      <!-- Left Column / Vision Feed (65% width) -->
+      <div id="vision-container" class="w-full md:w-[65%] h-[50vh] md:h-full relative bg-slate-950 flex items-center justify-center border-b md:border-b-0 md:border-r border-slate-800 overflow-hidden">
+        
+        <!-- Live Video Element (Hidden in Privacy Mesh Mode) -->
+        <video id="train-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
+        
+        <!-- Visual Rendering Canvas -->
+        <canvas id="train-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
+
+
+        <!-- Top Status Pill Badges -->
+        <div class="absolute top-4 left-4 z-20 flex flex-wrap gap-2 pointer-events-none">
+          <div id="pill-phase" class="px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-emerald-400 border border-emerald-500/40 shadow-lg backdrop-blur">
+            吸氣階段 (閉口鼻吸)
+          </div>
+          <div id="pill-cycle" class="px-3 py-1.5 rounded-xl font-medium text-xs bg-slate-900/90 text-slate-300 border border-slate-700 shadow-lg backdrop-blur">
+            週期: <span id="val-cycle-count" class="font-bold text-white">1</span>
+          </div>
+          <div id="pill-time-left" class="px-3 py-1.5 rounded-xl font-mono text-xs bg-slate-900/90 text-cyan-300 border border-cyan-500/40 shadow-lg backdrop-blur">
+            剩餘: <span id="val-timer-left">02:00</span>
+          </div>
+        </div>
+
+
+        <!-- Privacy Watermark in Mesh Mode -->
+        <div id="badge-mesh-mode" class="hidden absolute top-4 right-4 z-20 px-3 py-1 rounded-lg text-xs bg-slate-900/80 text-teal-300 border border-teal-500/30 backdrop-blur pointer-events-none">
+          🔒 去識別化黑底骨架模式
+        </div>
+      </div>
+
+
+      <!-- Right Column / Guided Pacing & Biofeedback Cards (35% width) -->
+      <div class="w-full md:w-[35%] h-[50vh] md:h-full bg-slate-900 flex flex-col p-4 md:p-6 justify-between overflow-y-auto space-y-4">
+        
+        <!-- Pacing Sphere Container -->
+        <div class="flex-1 flex flex-col items-center justify-center py-2 relative min-h-[180px]">
+          <div id="pacer-outer-ring" class="relative w-44 h-44 md:w-56 md:h-56 rounded-full border-4 border-slate-800 flex items-center justify-center p-2">
+            <!-- Dynamic Breathing Pacer Ball -->
+            <div id="pacer-ball" class="w-24 h-24 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 shadow-2xl shadow-emerald-500/40 flex flex-col items-center justify-center text-slate-950 font-bold transition-all duration-300 transform scale-100">
+              <span id="pacer-action-text" class="text-sm md:text-base font-extrabold tracking-wide">用鼻吸氣</span>
+              <span id="pacer-seconds-text" class="text-xs font-mono font-bold mt-0.5">2.0s</span>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Real-Time Biofeedback Indicators (3 Cards) -->
+        <div class="space-y-2.5">
+          
+          <!-- Card 1: 嘴型狀態 (PLB Detection) -->
+          <div id="card-status-plb" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-colors">
+            <div class="flex items-center space-x-3">
+              <div id="icon-plb" class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-base">
+                👄
+              </div>
+              <div>
+                <div class="text-xs text-slate-400 font-medium">嘴唇開合與噘唇 (PLB)</div>
+                <div id="text-plb-state" class="text-sm font-bold text-white">符合標準</div>
+              </div>
+            </div>
+            <div id="badge-plb-score" class="text-xs font-mono px-2 py-1 rounded bg-slate-800 text-slate-300">
+              LAR: 0.05
+            </div>
+          </div>
+
+
+          <!-- Card 2: 雙肩狀態 (Shoulder Hike Proxy) -->
+          <div id="card-status-shoulder" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-colors">
+            <div class="flex items-center space-x-3">
+              <div id="icon-shoulder" class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-base">
+                🧘
+              </div>
+              <div>
+                <div class="text-xs text-slate-400 font-medium">雙肩沉肩 (輔助肌無代償)</div>
+                <div id="text-shoulder-state" class="text-sm font-bold text-white">放鬆沉肩</div>
+              </div>
+            </div>
+            <div id="badge-shoulder-delta" class="text-xs font-mono px-2 py-1 rounded bg-slate-800 text-slate-300">
+              ΔY: +0.02
+            </div>
+          </div>
+
+
+          <!-- Card 3: 吸呼比率 (I:E Ratio) -->
+          <div id="card-status-ie" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-colors">
+            <div class="flex items-center space-x-3">
+              <div class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-base text-blue-400">
+                ⏱️
+              </div>
+              <div>
+                <div class="text-xs text-slate-400 font-medium">當前循環吸呼比 (I:E)</div>
+                <div id="text-ie-state" class="text-sm font-bold text-white">1 : 2.0 (目標達標)</div>
+              </div>
+            </div>
+            <div id="badge-ie-actual" class="text-xs font-mono px-2 py-1 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              1:2.0
+            </div>
+          </div>
+
+
+        </div>
+
+
+        <!-- End Early CTA -->
+        <button id="btn-stop-early" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition">
+          結束本次訓練並查看報告
+        </button>
+
+
+      </div>
+
+
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- High-Contrast Bottom Feedback Banner (≥28px) -->
+    <!-- ========================================== -->
+    <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-2xl md:text-3xl leading-snug border-t border-slate-800 bg-slate-900 text-emerald-300">
+      做得好，繼續跟住節奏慢慢呼吸
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 4. STATE_SUMMARY: 訓練總結與報告畫面 -->
+    <!-- ========================================== -->
+    <div id="state-summary" class="hidden flex-1 flex flex-col items-center justify-center p-4 md:p-8 overflow-y-auto">
+      <div class="max-w-4xl w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6">
+        
+        <!-- Summary Header -->
+        <div class="text-center space-y-1">
+          <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            ✅ 呼吸復康訓練順利完成
+          </div>
+          <h2 class="text-2xl md:text-3xl font-extrabold text-white">臨床訓練表現摘要報告</h2>
+          <p class="text-slate-400 text-xs md:text-sm">數據已於本機完成匿名化計算，不含生物特徵影像或個人識別個資。</p>
+        </div>
+
+
+        <!-- 5 Core Metric Cards Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+          
+          <!-- Metric 1: 循環總數與時長 -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 font-medium">完成循環 / 訓練時長</span>
+            <div id="sum-cycles" class="text-2xl md:text-3xl font-black text-white mt-1">12 週期</div>
+            <div id="sum-duration" class="text-xs text-slate-400 mt-1">總時間 02:00</div>
+          </div>
+
+
+          <!-- Metric 2: 平均呼吸頻率 (RR) -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 font-medium">平均呼吸頻率 (RR)</span>
+            <div id="sum-rr" class="text-2xl md:text-3xl font-black text-blue-400 mt-1">10.0</div>
+            <div class="text-xs text-slate-400 mt-1">次 / 分鐘 (breaths/min)</div>
+          </div>
+
+
+          <!-- Metric 3: 實測平均吸呼比 (I:E Ratio) -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 font-medium">平均實測吸呼比 (I:E)</span>
+            <div id="sum-ie" class="text-2xl md:text-3xl font-black text-teal-400 mt-1">1 : 2.1</div>
+            <div class="text-xs text-slate-400 mt-1">有效噘唇吹氣比率</div>
+          </div>
+
+
+          <!-- Metric 4: 噘唇嘴型達標率 (PLB Accuracy) -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 font-medium">噘唇嘴型達標率</span>
+            <div id="sum-plb-acc" class="text-2xl md:text-3xl font-black text-emerald-400 mt-1">92%</div>
+            <div class="text-xs text-emerald-500/80 mt-1">呼氣吹氣微張吻合</div>
+          </div>
+
+
+          <!-- Metric 5: 雙肩放鬆達標率 (Shoulder Relaxation) -->
+          <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 font-medium">雙肩沉肩放鬆率</span>
+            <div id="sum-shoulder-acc" class="text-2xl md:text-3xl font-black text-emerald-400 mt-1">96%</div>
+            <div class="text-xs text-slate-400 mt-1">無輔助肌聳肩代償</div>
+          </div>
+
+
+          <!-- Overall Clinical Score Badge -->
+          <div class="bg-gradient-to-br from-emerald-950/60 to-slate-950/80 p-4 rounded-2xl border border-emerald-500/30 text-center flex flex-col justify-center">
+            <span class="text-xs text-emerald-300 font-medium">綜合臨床質素評級</span>
+            <div id="sum-grade" class="text-2xl md:text-3xl font-black text-emerald-300 mt-1">優秀 (A)</div>
+            <div class="text-xs text-emerald-400/70 mt-1">呼吸形態平穩達標</div>
+          </div>
+
+
+        </div>
+
+
+        <!-- Action CTAs -->
+        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+          <button id="btn-export-csv" class="flex-1 py-3.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm transition shadow-lg shadow-teal-600/20 flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            下載匿名 CSV 臨床報表
+          </button>
+          <button id="btn-save-local" class="py-3.5 px-5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm border border-slate-700 transition flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+            儲存至本地歷史紀錄
+          </button>
+          <button id="btn-restart" class="py-3.5 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+            🔄 重新開始訓練
+          </button>
+        </div>
+
+
+        <!-- History Records Accordion / Box -->
+        <div id="box-history" class="pt-2 border-t border-slate-800">
+          <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+            <span>本機訓練歷史紀錄 (最近 5 次)</span>
+            <button id="btn-clear-history" class="hover:text-rose-400 transition">清空紀錄</button>
+          </div>
+          <div id="list-history" class="space-y-1.5 max-h-36 overflow-y-auto text-xs font-mono text-slate-300">
+            <div class="text-slate-500 py-1">暫無本地歷史紀錄</div>
+          </div>
+        </div>
+
+
+      </div>
+    </div>
+
+
+  </main>
+
+
+  <!-- Non-blocking Clinical Toast Notification -->
+  <div id="toast-notification" class="hidden fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-emerald-950/95 border border-emerald-500/50 text-emerald-200 text-xs md:text-sm font-semibold shadow-2xl backdrop-blur transition-all duration-300">
+    ✅ 訓練紀錄已成功保存在本機瀏覽器。
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- Collapsible Debug Drawer (Section 5) -->
+  <!-- ========================================== -->
+  <div id="debug-drawer" class="fixed right-0 top-0 bottom-0 w-80 md:w-96 bg-slate-900/95 backdrop-blur-md border-l border-slate-800 p-5 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto space-y-4">
+    <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        🛠️ 臨床演算法調試面板
+      </h3>
+      <button id="btn-close-debug" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+    </div>
+
+
+    <!-- Live Parameters Readout -->
+    <div class="space-y-2">
+      <h4 class="text-xs font-semibold text-teal-400 uppercase tracking-wider">即時數值監測 (Real-Time Metrics)</h4>
+      <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">LAR (開合比)</span>
+          <span id="dbg-val-lar" class="font-bold text-white">0.000</span>
+        </div>
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">mouthPucker</span>
+          <span id="dbg-val-pucker" class="font-bold text-white">0.000</span>
+        </div>
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">mouthFunnel</span>
+          <span id="dbg-val-funnel" class="font-bold text-white">0.000</span>
+        </div>
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">ΔY_shoulder</span>
+          <span id="dbg-val-shoulder" class="font-bold text-white">0.000</span>
+        </div>
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">D_eye</span>
+          <span id="dbg-val-deye" class="font-bold text-white">0.000</span>
+        </div>
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+          <span class="text-slate-400 block">Shoulder_Tilt</span>
+          <span id="dbg-val-tilt" class="font-bold text-white">0.000</span>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Threshold Sliders (Clinical Fine-Tuning) -->
+    <div class="space-y-3 pt-2 border-t border-slate-800">
+      <h4 class="text-xs font-semibold text-teal-400 uppercase tracking-wider">臨床判定閾值微調 (Thresholds)</h4>
+      
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs text-slate-300">
+          <span>吸氣 LAR 上限 (閉口鼻吸)</span>
+          <span id="dbg-lbl-lar-in-max" class="font-mono text-emerald-400">0.06</span>
+        </div>
+        <input id="dbg-range-lar-in-max" type="range" min="0.03" max="0.12" step="0.01" value="0.06" class="w-full accent-emerald-500">
+      </div>
+
+
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs text-slate-300">
+          <span>呼氣 PLB mouthPucker 閾值</span>
+          <span id="dbg-lbl-pucker-min" class="font-mono text-emerald-400">0.40</span>
+        </div>
+        <input id="dbg-range-pucker-min" type="range" min="0.20" max="0.70" step="0.05" value="0.40" class="w-full accent-emerald-500">
+      </div>
+
+
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs text-slate-300">
+          <span>呼氣 PLB mouthFunnel 閾值</span>
+          <span id="dbg-lbl-funnel-min" class="font-mono text-emerald-400">0.35</span>
+        </div>
+        <input id="dbg-range-funnel-min" type="range" min="0.15" max="0.60" step="0.05" value="0.35" class="w-full accent-emerald-500">
+      </div>
+
+
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs text-slate-300">
+          <span>聳肩代償 ΔY_shoulder 閾值</span>
+          <span id="dbg-lbl-shoulder-max" class="font-mono text-rose-400">0.12</span>
+        </div>
+        <input id="dbg-range-shoulder-max" type="range" min="0.05" max="0.25" step="0.01" value="0.12" class="w-full accent-rose-500">
+      </div>
+
+
+      <button id="btn-reset-thresholds" class="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700">
+        恢復預設臨床推薦閾值
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- Camera Diagnostic & Error Resolution Modal (Section 6) -->
+  <!-- ========================================== -->
+  <div id="modal-camera-error" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="max-w-lg w-full bg-slate-900 border border-rose-500/40 rounded-3xl p-6 shadow-2xl space-y-4">
+      <div class="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl border border-rose-500/30">
+        📷
+      </div>
+      <div>
+        <h3 id="modal-error-title" class="text-xl font-bold text-white">相機啟動受阻</h3>
+        <p id="modal-error-desc" class="text-sm text-slate-400 mt-1">瀏覽器無法正常存取視訊鏡頭硬體。</p>
+      </div>
+
+
+      <!-- Specific Step-by-Step Resolution Guide -->
+      <div id="modal-error-steps" class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-2 leading-relaxed">
+        <!-- Dynamically populated by JS according to Section 6 table -->
+      </div>
+
+
+      <div class="flex gap-3 pt-2">
+        <button id="btn-modal-retry" class="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition">
+          重試啟動相機
+        </button>
+        <button id="btn-modal-close" class="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm border border-slate-700">
+          返回主畫面
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- PWA Service Worker Registration & App ESM Entry Point -->
+  <script>
+    // PWA Service Worker registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('BreathGuide PWA Service Worker registered:', reg.scope))
+          .catch(err => console.warn('PWA Service Worker registration failed:', err));
+      });
+    }
+  </script>
+
+
+  <!-- Load ESM JavaScript Application (supports flat root export and js/ subdirectory) -->
+  <script type="module">
+    import('./app.js').catch(() => import('./js/app.js')).catch(err => {
+      console.error('Failed to load app.js:', err);
+    });
+  </script>
+</body>
+</html>

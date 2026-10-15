@@ -1,0 +1,122 @@
+/* ==========================================================================
+   BreathGuide COPD — PWA Clinical Stylesheet (style.css)
+   Compliant with Section 0 - Section 7 PRD Specifications
+   ========================================================================== */
+
+
+/* Prevent mobile pull-to-refresh and rubber-band bounce */
+html, body {
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* Mirror Mode transform for WebRTC Camera and Vision Canvas */
+.mirror-mode {
+  transform: scaleX(-1);
+  -webkit-transform: scaleX(-1);
+}
+
+
+/* High Contrast Bottom Banner Font & Pulse */
+#bottom-banner {
+  font-size: clamp(28px, 3.2vw, 36px);
+  min-height: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+
+/* Flashing red alert for shoulder hike / accessory muscle recruitment */
+@keyframes flash-shoulder-alert {
+  0%, 100% {
+    border-color: rgba(239, 68, 68, 0.4);
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+  50% {
+    border-color: rgba(239, 68, 68, 1);
+    background-color: rgba(239, 68, 68, 0.35);
+  }
+}
+
+
+.shoulder-alert-active {
+  animation: flash-shoulder-alert 0.8s infinite ease-in-out;
+  border-width: 2px !important;
+}
+
+
+/* Smooth Dynamic Breathing Pacer Sphere Animations */
+#pacer-ball {
+  will-change: transform, background, box-shadow;
+  transition-property: transform, box-shadow, background-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* Expansion during Inhale */
+.pacer-inhale-state {
+  transform: scale(1.65) !important;
+  background: radial-gradient(circle at 35% 35%, #34d399, #059669) !important;
+  box-shadow: 0 0 50px rgba(16, 185, 129, 0.55), inset 0 0 20px rgba(255, 255, 255, 0.3) !important;
+}
+
+
+/* Contraction during Exhale (Pursed-Lip Blow) */
+.pacer-exhale-state {
+  transform: scale(0.85) !important;
+  background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7) !important;
+  box-shadow: 0 0 35px rgba(2, 132, 199, 0.45), inset 0 0 15px rgba(255, 255, 255, 0.2) !important;
+}
+
+
+/* Privacy Mesh Dark Canvas Background (#0f172a / slate-900) */
+.privacy-mesh-canvas {
+  background-color: #0f172a !important;
+}
+
+
+/* Debug Drawer Scrollbar */
+#debug-drawer::-webkit-scrollbar,
+#list-history::-webkit-scrollbar {
+  width: 6px;
+}
+
+
+#debug-drawer::-webkit-scrollbar-track,
+#list-history::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+
+#debug-drawer::-webkit-scrollbar-thumb,
+#list-history::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+
+
+#debug-drawer::-webkit-scrollbar-thumb:hover,
+#list-history::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+
+/* Input Range Accent Customization */
+input[type="range"] {
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #1e293b;
+}
+
+
+/* iOS Safari Home Screen Fullscreen Adjustments */
+@supports (-webkit-touch-callout: none) {
+  body {
+    min-height: -webkit-fill-available;
+  }
+}
