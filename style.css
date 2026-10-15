@@ -1,7 +1,17 @@
 /* ==========================================================================
-   BreathGuide — 實時呼吸視覺生物反饋系統 (style.css)
-   v3.0 Aesthetic & Interactive Clinical UI Stylesheet
+   舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
+   v4.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格)
    ========================================================================== */
+
+:root {
+  --inhale-color: #4DB6AC;
+  --exhale-color: #FF7043;
+  --bg-color: #f5fafd;
+  --accent-color: #2E7D32;
+  --card-bg: rgba(255, 255, 255, 0.94);
+  --text-main: #2c3e50;
+  --text-muted: #64748b;
+}
 
 /* Prevent mobile pull-to-refresh and rubber-band bounce */
 html, body {
@@ -9,14 +19,17 @@ html, body {
   touch-action: manipulation;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-color);
+  color: var(--text-main);
 }
 
-/* Subtle clinical background grid glow */
-.bg-clinical-mesh {
-  background-color: #020617;
+/* Gentle pastel clinical background glow */
+.bg-soothe-mesh {
+  background-color: var(--bg-color);
   background-image: 
-    radial-gradient(at 15% 15%, rgba(16, 185, 129, 0.08) 0px, transparent 45%),
-    radial-gradient(at 85% 85%, rgba(6, 182, 212, 0.08) 0px, transparent 45%);
+    radial-gradient(at 12% 15%, rgba(77, 182, 172, 0.14) 0px, transparent 50%),
+    radial-gradient(at 88% 85%, rgba(255, 112, 67, 0.10) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(255, 255, 255, 0.8) 0px, transparent 70%);
 }
 
 /* Mirror Mode transform for WebRTC Camera and Vision Canvas */
@@ -31,23 +44,23 @@ html, body {
 }
 
 #bottom-banner:not(.hidden) {
-  font-size: clamp(24px, 2.8vw, 34px);
-  min-height: 4.25rem;
+  font-size: clamp(22px, 2.5vw, 32px);
+  min-height: 4rem;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 -10px 30px -5px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 -8px 25px -5px rgba(44, 62, 80, 0.08);
 }
 
 /* Flashing red alert for shoulder hike / accessory muscle recruitment */
 @keyframes flash-shoulder-alert {
   0%, 100% {
-    border-color: rgba(239, 68, 68, 0.45);
-    background-color: rgba(127, 29, 29, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
+    background-color: rgba(254, 226, 226, 0.85);
   }
   50% {
-    border-color: rgba(248, 113, 113, 1);
-    background-color: rgba(185, 28, 28, 0.55);
+    border-color: rgba(220, 38, 38, 1);
+    background-color: rgba(254, 202, 202, 1);
   }
 }
 
@@ -58,46 +71,88 @@ html, body {
 
 /* Smooth Dynamic Breathing Pacer Sphere Animations */
 #pacer-ball {
-  will-change: transform, background, box-shadow;
-  transition: transform 0.12s linear, box-shadow 0.3s ease, background 0.3s ease;
+  will-change: transform, background-color, box-shadow;
+  transition: transform 0.12s linear, box-shadow 0.4s ease, background-color 0.5s ease;
 }
 
-/* Privacy Mesh Dark Canvas Background (#0f172a / slate-900) */
+.pacer-inhale-style {
+  background-color: var(--inhale-color);
+  box-shadow: 0 15px 45px rgba(77, 182, 172, 0.35);
+}
+
+.pacer-exhale-style {
+  background-color: var(--exhale-color);
+  box-shadow: 0 15px 45px rgba(255, 112, 67, 0.35);
+}
+
+/* Human Demonstration Mode Image Transitions */
+.human-demo-container {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(44, 62, 80, 0.12);
+  background: #ffffff;
+  border: 3px solid rgba(77, 182, 172, 0.35);
+  transition: border-color 0.5s ease, box-shadow 0.5s ease;
+}
+
+.human-demo-container.exhale-border {
+  border-color: rgba(255, 112, 67, 0.45);
+  box-shadow: 0 12px 32px rgba(255, 112, 67, 0.15);
+}
+
+.human-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.65s ease-in-out;
+}
+
+.human-img.active-img {
+  opacity: 1;
+}
+
+/* Privacy Mesh Dark Canvas Background (#0f172a / slate-900 — preserved per clinical spec) */
 .privacy-mesh-canvas {
   background-color: #0f172a !important;
 }
 
-/* Custom Range Slider Styling */
+/* Custom Range Slider Styling (Soft Green/Teal Theme) */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  height: 8px;
   border-radius: 9999px;
-  background: #1e293b;
+  background: #e2e8f0;
   outline: none;
   transition: background 0.2s;
 }
 
 input[type="range"]:hover {
-  background: #334155;
+  background: #cbd5e1;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--accent-color);
   cursor: pointer;
-  border: 2px solid #ecfdf5;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(46, 125, 50, 0.3);
   transition: transform 0.15s ease, background-color 0.15s ease;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  background: #34d399;
+  transform: scale(1.12);
+  background: #388e3c;
 }
 
 /* Custom Scrollbars */
@@ -108,18 +163,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 #debug-drawer::-webkit-scrollbar-track,
 #list-history::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #f1f5f9;
 }
 
 #debug-drawer::-webkit-scrollbar-thumb,
 #list-history::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #cbd5e1;
   border-radius: 9999px;
 }
 
 #debug-drawer::-webkit-scrollbar-thumb:hover,
 #list-history::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94a3b8;
 }
 
 /* iOS Safari Home Screen Fullscreen Adjustments */
@@ -127,4 +182,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   body {
     min-height: -webkit-fill-available;
   }
+}
+
+/* Offline Resilience: Ensure .hidden utility works even if CDN is unreachable */
+.hidden {
+  display: none !important;
 }

@@ -1,107 +1,269 @@
 <!DOCTYPE html>
-<html lang="zh-HK" class="h-full bg-slate-950 text-slate-100">
+<html lang="zh-HK" class="h-full bg-[#f5fafd] text-slate-800">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>BreathGuide — 實時呼吸視覺生物反饋系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統</title>
   
   <!-- PWA Settings -->
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#4DB6AC">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="BreathGuide">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="舒呼 SootheBreath">
   
   <!-- Tailwind CSS Play CDN v3.4 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#ecfdf5',
-              100: '#d1fae5',
-              500: '#10b981',
-              600: '#059669',
-              700: '#047857',
-            },
-            clinical: {
-              blue: '#0284c7',
-              teal: '#0d9488',
-              alert: '#ef4444',
-              warning: '#f59e0b',
+    if (typeof tailwind !== 'undefined') {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              soothe: {
+                bg: '#f5fafd',
+                inhale: '#4DB6AC',
+                exhale: '#FF7043',
+                accent: '#2E7D32',
+              },
+              brand: {
+                50: '#ecfdf5',
+                100: '#d1fae5',
+                500: '#4DB6AC',
+                600: '#2E7D32',
+                700: '#1b5e20',
+              }
             }
           }
         }
-      }
+      };
     }
   </script>
   
-  <!-- Style Sheet (with v=3 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=3">
+  <!-- Style Sheet (with v=4 cache buster + inline critical styles) -->
+  <link rel="stylesheet" href="style.css?v=4">
   <style>
-    html, body {
-      overscroll-behavior-y: none;
-      touch-action: manipulation;
-      -webkit-font-smoothing: antialiased;
-    }
-    .bg-clinical-mesh {
-      background-color: #020617;
-      background-image: 
-        radial-gradient(at 15% 15%, rgba(16, 185, 129, 0.08) 0px, transparent 45%),
-        radial-gradient(at 85% 85%, rgba(6, 182, 212, 0.08) 0px, transparent 45%);
-    }
-    #bottom-banner {
-      display: none;
-    }
-    #bottom-banner:not(.hidden) {
-      font-size: clamp(24px, 2.8vw, 34px);
-      min-height: 4.25rem;
-      display: flex !important;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 -10px 30px -5px rgba(0, 0, 0, 0.6);
-    }
-    @keyframes flash-shoulder-alert {
-      0%, 100% { border-color: rgba(239, 68, 68, 0.45); background-color: rgba(127, 29, 29, 0.25); }
-      50% { border-color: rgba(248, 113, 113, 1); background-color: rgba(185, 28, 28, 0.55); }
-    }
-    .shoulder-alert-active {
-      animation: flash-shoulder-alert 0.8s infinite ease-in-out;
-      border-width: 2px !important;
-    }
-    .privacy-mesh-canvas {
-      background-color: #0f172a !important;
-    }
+/* ==========================================================================
+   舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
+   v4.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格)
+   ========================================================================== */
+
+:root {
+  --inhale-color: #4DB6AC;
+  --exhale-color: #FF7043;
+  --bg-color: #f5fafd;
+  --accent-color: #2E7D32;
+  --card-bg: rgba(255, 255, 255, 0.94);
+  --text-main: #2c3e50;
+  --text-muted: #64748b;
+}
+
+/* Prevent mobile pull-to-refresh and rubber-band bounce */
+html, body {
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+}
+
+/* Gentle pastel clinical background glow */
+.bg-soothe-mesh {
+  background-color: var(--bg-color);
+  background-image: 
+    radial-gradient(at 12% 15%, rgba(77, 182, 172, 0.14) 0px, transparent 50%),
+    radial-gradient(at 88% 85%, rgba(255, 112, 67, 0.10) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(255, 255, 255, 0.8) 0px, transparent 70%);
+}
+
+/* Mirror Mode transform for WebRTC Camera and Vision Canvas */
+.mirror-mode {
+  transform: scaleX(-1);
+  -webkit-transform: scaleX(-1);
+}
+
+/* High Contrast Bottom Banner Font & Pulse — STRICTLY hidden when .hidden is present */
+#bottom-banner {
+  display: none;
+}
+
+#bottom-banner:not(.hidden) {
+  font-size: clamp(22px, 2.5vw, 32px);
+  min-height: 4rem;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 -8px 25px -5px rgba(44, 62, 80, 0.08);
+}
+
+/* Flashing red alert for shoulder hike / accessory muscle recruitment */
+@keyframes flash-shoulder-alert {
+  0%, 100% {
+    border-color: rgba(239, 68, 68, 0.5);
+    background-color: rgba(254, 226, 226, 0.85);
+  }
+  50% {
+    border-color: rgba(220, 38, 38, 1);
+    background-color: rgba(254, 202, 202, 1);
+  }
+}
+
+.shoulder-alert-active {
+  animation: flash-shoulder-alert 0.8s infinite ease-in-out;
+  border-width: 2px !important;
+}
+
+/* Smooth Dynamic Breathing Pacer Sphere Animations */
+#pacer-ball {
+  will-change: transform, background-color, box-shadow;
+  transition: transform 0.12s linear, box-shadow 0.4s ease, background-color 0.5s ease;
+}
+
+.pacer-inhale-style {
+  background-color: var(--inhale-color);
+  box-shadow: 0 15px 45px rgba(77, 182, 172, 0.35);
+}
+
+.pacer-exhale-style {
+  background-color: var(--exhale-color);
+  box-shadow: 0 15px 45px rgba(255, 112, 67, 0.35);
+}
+
+/* Human Demonstration Mode Image Transitions */
+.human-demo-container {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(44, 62, 80, 0.12);
+  background: #ffffff;
+  border: 3px solid rgba(77, 182, 172, 0.35);
+  transition: border-color 0.5s ease, box-shadow 0.5s ease;
+}
+
+.human-demo-container.exhale-border {
+  border-color: rgba(255, 112, 67, 0.45);
+  box-shadow: 0 12px 32px rgba(255, 112, 67, 0.15);
+}
+
+.human-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.65s ease-in-out;
+}
+
+.human-img.active-img {
+  opacity: 1;
+}
+
+/* Privacy Mesh Dark Canvas Background (#0f172a / slate-900 — preserved per clinical spec) */
+.privacy-mesh-canvas {
+  background-color: #0f172a !important;
+}
+
+/* Custom Range Slider Styling (Soft Green/Teal Theme) */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  outline: none;
+  transition: background 0.2s;
+}
+
+input[type="range"]:hover {
+  background: #cbd5e1;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  cursor: pointer;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(46, 125, 50, 0.3);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+  background: #388e3c;
+}
+
+/* Custom Scrollbars */
+#debug-drawer::-webkit-scrollbar,
+#list-history::-webkit-scrollbar {
+  width: 6px;
+}
+
+#debug-drawer::-webkit-scrollbar-track,
+#list-history::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+#debug-drawer::-webkit-scrollbar-thumb,
+#list-history::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+#debug-drawer::-webkit-scrollbar-thumb:hover,
+#list-history::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* iOS Safari Home Screen Fullscreen Adjustments */
+@supports (-webkit-touch-callout: none) {
+  body {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* Offline Resilience: Ensure .hidden utility works even if CDN is unreachable */
+.hidden {
+  display: none !important;
+}
+
   </style>
 </head>
-<body class="h-full flex flex-col font-sans select-none overflow-x-hidden antialiased bg-clinical-mesh">
+<body class="h-full flex flex-col font-sans select-none overflow-x-hidden antialiased bg-soothe-mesh text-slate-800">
 
-  <!-- Top Navigation Bar -->
-  <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 md:px-6 py-3 flex items-center justify-between z-20 shrink-0">
-    <div class="flex items-center space-x-3.5">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/25">
-        <svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
+  <!-- Top Navigation Bar (輕柔風格) -->
+  <header class="bg-white/90 backdrop-blur-md border-b border-teal-100/90 px-4 md:px-6 py-2.5 flex items-center justify-between z-20 shrink-0 shadow-sm">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#2E7D32] to-[#4DB6AC] flex items-center justify-center shadow-md shadow-teal-500/20 text-white font-black text-lg">
+        🌬️
       </div>
       <div>
-        <h1 class="font-extrabold text-base md:text-lg text-white leading-tight flex items-center gap-2">
-          BreathGuide — 實時呼吸視覺生物反饋系統
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30 font-semibold">PWA 臨床視覺版</span>
+        <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
+          舒呼 (SootheBreath)
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">實時呼吸生物反饋 PWA</span>
         </h1>
-        <p class="text-xs text-slate-400 mt-0.5">實時噘唇呼吸 (PLB) 與輔助肌代償生物反饋</p>
+        <p class="text-xs text-slate-500 mt-0.5">噘唇呼吸 (PLB) · 聳肩代償監測 · 真人與節奏球導引</p>
       </div>
     </div>
 
-    <!-- Privacy & Mode Indicators -->
-    <div class="flex items-center space-x-3">
-      <span class="hidden lg:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        100% 本地端邊緣 AI 推論 (零影像傳輸 / Zero Video Transmission)
+    <!-- Privacy, Voice & Debug Indicators -->
+    <div class="flex items-center space-x-2 md:space-x-3">
+      <span class="hidden lg:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#2E7D32] border border-emerald-200">
+        <span class="w-2 h-2 rounded-full bg-[#2E7D32] animate-pulse"></span>
+        100% 本地端 AI 推論 (零影像上傳)
       </span>
-      <button id="btn-toggle-debug" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 transition cursor-pointer flex items-center gap-1.5 shadow-sm">
+      <button id="btn-header-voice" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-50 hover:bg-teal-100 active:scale-95 text-teal-800 border border-teal-200 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
+        <span>🔊</span>
+        <span class="hidden sm:inline">語音導航</span>
+      </button>
+      <button id="btn-toggle-debug" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 border border-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
         <span>🛠️</span>
         <span>調試面板</span>
       </button>
@@ -112,114 +274,373 @@
   <main class="flex-1 relative overflow-hidden flex flex-col">
 
     <!-- ========================================== -->
-    <!-- 1. STATE_IDLE: 準備與設定畫面 -->
+    <!-- 1. STATE_IDLE: 準備與設定畫面 (輕柔換皮風格) -->
     <!-- ========================================== -->
-    <div id="state-idle" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 overflow-y-auto">
-      <div class="max-w-3xl w-full bg-slate-900/90 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6">
+    <div id="state-idle" class="flex-1 flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto">
+      <div class="max-w-3xl w-full bg-white/95 backdrop-blur-xl border border-teal-100 rounded-3xl p-5 md:p-7 shadow-xl space-y-5">
         
         <!-- Header & Value Prop -->
-        <div class="text-center space-y-2.5">
-          <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
-            🏥 慢性阻塞性肺病 (COPD) 呼吸復康科學訓練
+        <div class="text-center space-y-2">
+          <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30">
+            🌿 舒呼 (SootheBreath) · 慢性阻塞性肺病 (COPD) 呼吸復康訓練
           </div>
-          <h2 class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">噘唇呼吸 (Pursed-Lip Breathing) 視覺導引</h2>
-          <p class="text-slate-400 text-sm md:text-base leading-relaxed max-w-2xl mx-auto">
-            透過電腦視覺實時識別閉口鼻吸、噘唇吹氣嘴型 (PLB)，以及肩頸輔助肌聳肩代償，防止氣體滯留 (Air Trapping)。
+          <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">噘唇呼吸 (Pursed-Lip Breathing) 視覺生物反饋</h2>
+          <p class="text-slate-500 text-xs md:text-sm leading-relaxed max-w-2xl mx-auto">
+            結合輕柔節奏球與真人呼吸示範，透過電腦視覺實時識別閉口鼻吸、噘唇吹氣嘴型 (PLB)、肩頸輔助肌聳肩代償及平均呼吸頻率 (RR)。
           </p>
         </div>
 
         <!-- Privacy Shield Banner -->
-        <div class="bg-slate-950/75 border border-emerald-500/30 rounded-2xl p-4 flex items-start space-x-3.5 shadow-inner">
-          <div class="text-2xl text-emerald-400 shrink-0 mt-0.5">🛡️</div>
-          <div class="text-xs md:text-sm text-slate-300 leading-relaxed">
-            <span class="font-bold text-emerald-300">隱私設計保證 (Privacy-by-Design)：</span>
-            鏡頭影像完全在你的本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕對不會錄影、不上傳雲端伺服器，並提供「去識別化黑底骨架網格」全面遮蓋五官與背景。
+        <div class="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-3.5 flex items-start space-x-3 shadow-xs">
+          <div class="text-xl shrink-0 mt-0.5">🛡️</div>
+          <div class="text-xs text-slate-600 leading-relaxed">
+            <span class="font-bold text-[#2E7D32]">隱私設計保證 (Privacy-by-Design)：</span>
+            所有視訊幀僅於本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕不錄影、絕不上傳伺服器；支援「去識別化黑底骨架網格」與「純節奏球模式」。
           </div>
         </div>
 
         <!-- Training Configuration Cards -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           
-          <!-- Card A: 吸呼時長設定 -->
-          <div class="bg-slate-950/65 p-5 rounded-2xl border border-slate-800/90 space-y-4">
+          <!-- Card A: 吸呼時長與呼吸頻率設定 -->
+          <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-3.5">
             <div class="flex justify-between items-center">
-              <label class="text-sm font-bold text-slate-100">目標吸呼時間 (I:E 比率)</label>
-              <span id="label-ie-preset" class="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30">目標 1 : 2.0</span>
+              <label class="text-sm font-extrabold text-slate-800">目標吸呼時間與呼吸頻率</label>
+              <span id="label-ie-preset" class="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-[#4DB6AC]/20 text-teal-900 border border-[#4DB6AC]/40">目標 1 : 2.0</span>
             </div>
             
-            <div class="space-y-1.5">
-              <div class="flex justify-between text-xs text-slate-400">
-                <span>吸氣秒數 (Inhale)</span>
-                <span id="val-inhale-time" class="font-bold text-emerald-400 font-mono">2.0 秒</span>
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs text-slate-600">
+                <span class="font-medium">吸氣秒數 (Inhale)</span>
+                <span id="val-inhale-time" class="font-extrabold text-[#2E7D32] font-mono">2.0 秒</span>
               </div>
-              <input id="input-inhale-time" type="range" min="1.5" max="3.0" step="0.5" value="2.0" class="w-full accent-emerald-500 cursor-pointer">
+              <input id="input-inhale-time" type="range" min="1.5" max="3.0" step="0.5" value="2.0" class="w-full cursor-pointer">
             </div>
 
-            <div class="space-y-1.5">
-              <div class="flex justify-between text-xs text-slate-400">
-                <span>呼氣秒數 (Exhale)</span>
-                <span id="val-exhale-time" class="font-bold text-teal-400 font-mono">4.0 秒</span>
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs text-slate-600">
+                <span class="font-medium">呼氣秒數 (Exhale)</span>
+                <span id="val-exhale-time" class="font-extrabold text-[#FF7043] font-mono">4.0 秒</span>
               </div>
-              <input id="input-exhale-time" type="range" min="3.0" max="8.0" step="0.5" value="4.0" class="w-full accent-teal-500 cursor-pointer">
+              <input id="input-exhale-time" type="range" min="3.0" max="8.0" step="0.5" value="4.0" class="w-full cursor-pointer">
             </div>
 
-            <div class="flex gap-2 pt-1">
-              <button type="button" class="btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm transition cursor-pointer" data-in="2" data-ex="4">1 : 2</button>
-              <button type="button" class="btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer" data-in="2" data-ex="6">1 : 3</button>
-              <button type="button" class="btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer" data-in="2" data-ex="8">1 : 4</button>
+            <div class="flex gap-2 pt-0.5">
+              <button type="button" class="btn-ie-quick flex-1 py-2 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer" data-in="2" data-ex="4">比例 1 : 2</button>
+              <button type="button" class="btn-ie-quick flex-1 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer" data-in="2" data-ex="6">比例 1 : 3</button>
+              <button type="button" class="btn-ie-quick flex-1 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer" data-in="2" data-ex="8">比例 1 : 4</button>
             </div>
+
+            <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs">
+              <span class="text-slate-500 font-medium">目標平均呼吸頻率 (RR)：</span>
+              <span id="val-target-bpm" class="font-extrabold text-[#2E7D32] font-mono">10.0 BPM (次/分)</span>
+            </div>
+            <div id="val-cycle-total" class="text-[11px] text-slate-400 text-center">單次循環總長: 6.0 秒 (吸 2.0s / 呼 4.0s)</div>
           </div>
 
-          <!-- Card B: 模式與語音設定 -->
-          <div class="bg-slate-950/65 p-5 rounded-2xl border border-slate-800/90 space-y-3.5">
-            <label class="text-sm font-bold text-slate-100 block">視覺私隱與輔助功能</label>
+          <!-- Card B: 視覺私隱、真人模式與語音設定 -->
+          <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-3">
+            <label class="text-sm font-extrabold text-slate-800 block">引導圖示、視覺私隱與語音</label>
+
+            <!-- Display Mode: Balloon vs Human Mode (Requirement 3) -->
+            <div class="space-y-1.5">
+              <span class="text-xs text-slate-600 font-medium block">呼吸導引顯示模式：</span>
+              <div class="flex gap-2">
+                <button id="btn-pacer-balloon" type="button" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer">🎈 氣球模式</button>
+                <button id="btn-pacer-human" type="button" class="flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">🧑 真人示範</button>
+              </div>
+            </div>
+
+            <!-- Human Mode Gender Selection (1=男吸, 2=男呼, 3=女吸, 4=女呼) -->
+            <div id="wrapper-human-gender" class="hidden space-y-1.5 bg-teal-50/60 p-2.5 rounded-xl border border-teal-200/70">
+              <span class="text-xs text-teal-900 font-semibold block">真人示範性別選擇 (4張實景圖)：</span>
+              <div class="flex gap-2">
+                <button id="btn-gender-male" type="button" class="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer">👨 男性 (1吸/2呼)</button>
+                <button id="btn-gender-female" type="button" class="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">👩 女性 (3吸/4呼)</button>
+              </div>
+            </div>
 
             <!-- Visual Privacy Mode Selector -->
             <div class="space-y-1">
-              <span class="text-xs text-slate-400">視覺反饋顯示模式：</span>
-              <select id="select-privacy-mode" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer">
+              <span class="text-xs text-slate-600 font-medium">相機私隱顯示模式：</span>
+              <select id="select-privacy-mode" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
                 <option value="mirror">實時鏡像 + AR 輔助框 (Mirror Mode)</option>
                 <option value="privacy_mesh" selected>去識別化黑底骨架網格 (Privacy Mesh Mode)</option>
-                <option value="minimalist">純呼吸節奏球模式 (Minimalist Pacer Mode)</option>
+                <option value="minimalist">純呼吸節奏引導模式 (Pacer Mode 居中)</option>
               </select>
             </div>
 
             <!-- Training Duration -->
             <div class="space-y-1">
-              <span class="text-xs text-slate-400">訓練總時長：</span>
-              <select id="select-duration" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer">
+              <span class="text-xs text-slate-600 font-medium">訓練總時長：</span>
+              <select id="select-duration" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
                 <option value="60">1 分鐘 (快速練習)</option>
                 <option value="120" selected>2 分鐘 (常規復康訓練)</option>
-                <option value="180">3 分鐘 (深度深呼吸)</option>
+                <option value="180">3 分鐘 (深度慢呼吸)</option>
                 <option value="300">5 分鐘 (強化臨床耐力)</option>
               </select>
             </div>
 
             <!-- Cantonese TTS Voice Toggle -->
-            <div class="flex items-center justify-between pt-1.5">
-              <span class="text-xs text-slate-300 font-medium">廣東話 (zh-HK) 語音導航口令</span>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs text-slate-700 font-semibold">廣東話 (zh-HK) 語音導航口令</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input id="toggle-voice" type="checkbox" checked class="sr-only peer">
-                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2E7D32]"></div>
               </label>
             </div>
           </div>
         </div>
 
         <!-- Primary & Demo Action Buttons -->
-        <div class="space-y-2.5 pt-1">
-          <button id="btn-start" type="button" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-extrabold text-lg md:text-xl shadow-xl shadow-emerald-500/25 transition-all transform active:scale-[0.99] flex items-center justify-center gap-3 cursor-pointer">
-            <svg class="w-6 h-6 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="space-y-2 pt-1">
+          <button id="btn-start" type="button" class="w-full py-3.5 px-6 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-base md:text-lg shadow-lg shadow-emerald-900/20 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            開始訓練 (啟動鏡頭)
+            開始練習 (進入 10 秒坐姿校準)
           </button>
 
           <div class="flex justify-center">
-            <button id="btn-start-demo" type="button" class="px-4 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-emerald-300 hover:bg-slate-800/60 transition cursor-pointer flex items-center gap-1.5">
+            <button id="btn-start-demo" type="button" class="px-4 py-1.5 rounded-xl text-xs font-semibold text-teal-800 hover:bg-teal-100/70 transition cursor-pointer flex items-center gap-1.5">
               <span>🧪</span>
-              <span>免鏡頭互動模擬預覽 (無相機時測試節奏球與報表)</span>
+              <span>免鏡頭互動模擬預覽 (無相機時測試 10 秒校準、真人模式與報表)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 2. STATE_CALIBRATING: 10 秒坐姿基準校準 + 確認機制 (Requirement 4) -->
+    <!-- ========================================================================= -->
+    <div id="state-calibrating" class="hidden flex-1 relative flex flex-col items-center justify-center p-4 bg-[#f5fafd]">
+      <div class="relative w-full max-w-4xl aspect-[16/9] max-h-[76vh] bg-slate-900 rounded-3xl overflow-hidden border-2 border-teal-200 shadow-2xl flex items-center justify-center">
+        <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
+        <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
+
+        <!-- Cancel Calibration Button -->
+        <button id="btn-cancel-calib" type="button" class="absolute top-4 left-4 z-30 px-3.5 py-1.5 rounded-xl bg-white/90 hover:bg-white text-slate-700 text-xs font-bold border border-slate-200 shadow-md backdrop-blur transition cursor-pointer">
+          ← 返回設定
+        </button>
+
+        <!-- Semi-transparent Alignment Silhouette Box -->
+        <div class="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center border-4 border-dashed border-[#4DB6AC]/60 rounded-3xl m-5">
+          <div class="w-40 h-52 rounded-[50%] border-2 border-[#4DB6AC]/80 mb-2 bg-[#4DB6AC]/10"></div>
+          <div class="w-72 h-10 border-t-2 border-x-2 border-[#4DB6AC]/80 rounded-t-3xl bg-[#4DB6AC]/10"></div>
+        </div>
+
+        <!-- Overlay A: 10-Second Countdown (前 7 秒收集基準，後 3 秒顯示「請確認位置」) -->
+        <div id="calib-countdown-overlay" class="absolute inset-0 z-20 bg-slate-950/55 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-6 space-y-3.5">
+          <div id="calib-stage-badge" class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#4DB6AC]/25 text-teal-100 border border-[#4DB6AC]/50">
+            步驟 1/2：收集基準坐姿 (前 7 秒)
+          </div>
+          <div id="calib-countdown" class="text-6xl md:text-8xl font-black text-white drop-shadow-lg">
+            10
+          </div>
+          <h3 id="calib-title" class="text-xl md:text-3xl font-extrabold text-white max-w-lg drop-shadow">
+            請自然坐直、沉肩放鬆、閉上嘴巴
+          </h3>
+          <p id="calib-subtitle" class="text-teal-200 text-xs md:text-sm font-medium max-w-md">
+            前 7 秒：正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...
+          </p>
+          <!-- 10s Progress Bar -->
+          <div class="w-64 md:w-80 h-2.5 bg-white/20 rounded-full overflow-hidden border border-white/30">
+            <div id="calib-progress-bar" class="h-full bg-gradient-to-r from-[#4DB6AC] to-[#2E7D32] transition-all duration-500" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Overlay B: Confirmation Panel after 10s (結束後不自動開始，顯示 3 個按鈕) -->
+        <div id="calib-confirm-overlay" class="hidden absolute inset-0 z-20 bg-slate-950/65 backdrop-blur-xs flex flex-col items-center justify-center text-center p-6">
+          <div class="max-w-md w-full bg-white/95 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-teal-100 space-y-4 text-slate-800">
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-[#2E7D32]">
+              ✅ 10 秒基準校準完成
+            </div>
+            <h3 class="text-xl md:text-2xl font-extrabold text-slate-800">
+              請確認位置並開始訓練
+            </h3>
+            <p class="text-xs text-slate-500 leading-relaxed">
+              基準坐姿與雙肩高度已鎖定。請確認面部與雙肩處於鏡頭對齊框內，準備好後點擊下方主按鈕開始：
+            </p>
+            <div id="calib-summary-metrics" class="text-[11px] font-mono bg-slate-100 text-slate-600 px-3 py-2 rounded-xl border border-slate-200">
+              已收集基準數據 · D_eye: 0.22 · 肩高基準: 0.72
+            </div>
+
+            <div class="space-y-2.5 pt-1">
+              <button id="btn-confirm-start" type="button" class="w-full py-3.5 px-5 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-base shadow-lg shadow-emerald-900/20 transition transform active:scale-98 cursor-pointer">
+                ✅ 確認並開始訓練
+              </button>
+              <div class="flex gap-2.5">
+                <button id="btn-recalibrate" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
+                  🔄 重新校準
+                </button>
+                <button id="btn-adjust-settings" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer">
+                  ⚙️ 調整設定
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (支援雙欄 + Pacer 居中 + 右上角重校準) -->
+    <!-- ========================================================================= -->
+    <div id="state-training" class="hidden flex-1 flex flex-col overflow-hidden relative bg-[#f5fafd]">
+
+      <!-- Top Unified Bar in STATE_TRAINING (左：狀態與平均呼吸頻率；右：模式切換 + 🔄 重校準) -->
+      <div id="training-top-bar" class="w-full bg-white/90 backdrop-blur-md border-b border-teal-100 px-3 md:px-5 py-2 flex flex-wrap items-center justify-between gap-2 z-20 shrink-0 shadow-xs">
+        
+        <!-- Left Status Pills -->
+        <div class="flex flex-wrap items-center gap-1.5 md:gap-2">
+          <div id="pill-phase" class="px-3 py-1 rounded-xl font-bold text-xs md:text-sm bg-[#4DB6AC] text-white shadow-xs">
+            吸氣階段 (閉口鼻吸)
+          </div>
+          <div id="pill-cycle" class="px-2.5 py-1 rounded-xl font-semibold text-xs bg-slate-100 text-slate-700 border border-slate-200">
+            週期: <span id="val-cycle-count" class="font-extrabold text-slate-900">1</span>
+          </div>
+          <div id="pill-time-left" class="px-2.5 py-1 rounded-xl font-mono font-semibold text-xs bg-slate-100 text-teal-800 border border-slate-200">
+            剩餘: <span id="val-timer-left">02:00</span>
+          </div>
+          <!-- Requirement 7: Live Average Respiratory Rate Pill -->
+          <div id="pill-live-rr" class="px-2.5 py-1 rounded-xl font-semibold text-xs bg-emerald-50 text-[#2E7D32] border border-emerald-200">
+            平均呼吸頻率: <span id="val-live-rr" class="font-mono font-extrabold">10.0</span> 次/分
+          </div>
+        </div>
+
+        <!-- Right Mode Switcher + Human/Balloon Switcher + 🔄 重校準 (Requirement 5) -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <!-- Privacy Mode Switcher -->
+          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button id="btn-mode-mirror" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">鏡像 AR</button>
+            <button id="btn-mode-mesh" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-xs transition cursor-pointer">黑底骨架</button>
+            <button id="btn-mode-minimal" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">純節奏球</button>
+          </div>
+
+          <!-- Pacer Visual Switcher (氣球 / 男 / 女) -->
+          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button id="btn-train-balloon" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-xs transition cursor-pointer">🎈 氣球</button>
+            <button id="btn-train-male" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👨 男示範</button>
+            <button id="btn-train-female" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👩 女示範</button>
+          </div>
+
+          <!-- Requirement 5: TRAINING 右上角 🔄 重校準 按鈕 -->
+          <button id="btn-train-recalibrate" type="button" class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1">
+            <span>🔄</span>
+            <span>重校準</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Training Body (Left Vision + Right/Center Pacer & Biofeedback) -->
+      <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Left Column / Vision Feed (60% in Mirror/Mesh mode; hidden/collapsed in Minimalist Pacer Mode per Requirement 6) -->
+        <div id="vision-container" class="w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0">
+          <video id="train-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
+          <canvas id="train-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
+
+          <!-- Bottom-Left Privacy Mode Badge -->
+          <div id="badge-mesh-mode" class="absolute bottom-3 left-3 z-20 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-900/85 text-teal-300 border border-teal-500/30 backdrop-blur pointer-events-none">
+            🔒 去識別化黑底骨架模式
+          </div>
+        </div>
+
+        <!-- Right / Center Guidance Column (40% in Mirror/Mesh mode; 100% Centered in Minimalist Pacer Mode per Requirement 6) -->
+        <div id="guidance-panel" class="w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3">
+          
+          <!-- Dynamic Breathing Pacer Sphere OR Human Demonstration Mode (Centered with text!) -->
+          <div id="pacer-visual-area" class="flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center">
+            
+            <!-- Mode 1: Gentle Breathing Pacer Sphere (Balloon Mode) -->
+            <div id="pacer-outer-ring" class="relative w-48 h-48 md:w-56 md:h-56 rounded-full border-4 border-teal-100 bg-[#f5fafd] flex items-center justify-center p-2 shadow-inner mx-auto">
+              <div id="pacer-ball" class="w-32 h-32 md:w-36 md:h-36 rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100 transform scale-100">
+                <span id="pacer-action-text" class="text-base md:text-lg font-extrabold tracking-wide drop-shadow-xs">用鼻吸氣</span>
+                <span id="pacer-seconds-text" class="text-xs md:text-sm font-mono font-bold mt-0.5 opacity-95">2.0s</span>
+              </div>
+            </div>
+
+            <!-- Mode 2: Human Demonstration Mode (Requirement 3: 4 JPGs 1=男吸/2=男呼/3=女吸/4=女呼) -->
+            <div id="human-demo-wrapper" class="hidden flex flex-col items-center justify-center mx-auto">
+              <div id="human-demo-box" class="human-demo-container w-48 h-48 md:w-56 md:h-56 mx-auto">
+                <img id="img-human-inhale" class="human-img active-img" src="1.jpg" alt="吸氣真人示範">
+                <img id="img-human-exhale" class="human-img" src="2.jpg" alt="呼氣真人示範">
+              </div>
+              <div class="mt-2.5 flex items-center justify-center gap-2">
+                <span id="human-action-text" class="text-lg md:text-xl font-extrabold text-slate-800">用鼻吸氣</span>
+                <span id="human-seconds-text" class="text-sm md:text-base font-mono font-extrabold px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200">2.0s</span>
+              </div>
+            </div>
+
+            <!-- Centered Text Prompt below Ball / Human Photo (Requirement 6) -->
+            <p id="pacer-phase-hint" class="text-xs md:text-sm text-slate-600 mt-3 font-bold text-center mx-auto">
+              閉口由鼻吸氣 · 雙肩保持下沉
+            </p>
+          </div>
+
+          <!-- 4 Real-Time Clinical Biofeedback Cards (含新增第 4 張：平均呼吸頻率 Average RR) -->
+          <div id="biofeedback-cards-grid" class="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5">
+            
+            <!-- Card 1: 嘴型狀態 (PLB Detection) -->
+            <div id="card-status-plb" class="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-base shadow-2xs">👄</div>
+                <div>
+                  <div class="text-[11px] text-slate-500 font-semibold">嘴唇開合與噘唇 (PLB)</div>
+                  <div id="text-plb-state" class="text-xs md:text-sm font-bold text-[#2E7D32]">符合標準</div>
+                </div>
+              </div>
+              <div id="badge-plb-score" class="text-xs font-mono font-bold px-2 py-1 rounded-lg bg-white text-slate-700 border border-slate-200">LAR: 0.04</div>
+            </div>
+
+            <!-- Card 2: 雙肩狀態 (Shoulder Hike Proxy) -->
+            <div id="card-status-shoulder" class="p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-teal-50 flex items-center justify-center text-base shadow-2xs">🧘</div>
+                <div>
+                  <div class="text-[11px] text-slate-500 font-semibold">雙肩沉肩 (輔助肌)</div>
+                  <div id="text-shoulder-state" class="text-xs md:text-sm font-bold text-[#2E7D32]">放鬆沉肩</div>
+                </div>
+              </div>
+              <div id="badge-shoulder-delta" class="text-xs font-mono font-bold px-2 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-200">ΔY: +0.01</div>
+            </div>
+
+            <!-- Card 3: 吸呼比率 (I:E Ratio) -->
+            <div id="card-status-ie" class="p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-sky-50 flex items-center justify-center text-base shadow-2xs">⏱️</div>
+                <div>
+                  <div class="text-[11px] text-slate-500 font-semibold">當前循環吸呼比 (I:E)</div>
+                  <div id="text-ie-state" class="text-xs md:text-sm font-bold text-slate-800">1 : 2.0 (目標達標)</div>
+                </div>
+              </div>
+              <div id="badge-ie-actual" class="text-xs font-mono font-bold px-2 py-1 rounded-lg bg-sky-50 text-sky-800 border border-sky-200">1 : 2.0</div>
+            </div>
+
+            <!-- Card 4: 平均呼吸頻率 (Average Respiratory Rate — Requirement 7) -->
+            <div id="card-status-rr" class="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-base shadow-2xs">🫁</div>
+                <div>
+                  <div class="text-[11px] text-slate-500 font-semibold">平均呼吸頻率 (Mean RR)</div>
+                  <div id="text-rr-state" class="text-xs md:text-sm font-bold text-[#2E7D32]">10.0 BPM (目標達標)</div>
+                </div>
+              </div>
+              <div id="badge-rr-actual" class="text-xs font-mono font-bold px-2 py-1 rounded-lg bg-white text-[#2E7D32] border border-emerald-200">10.0 次/分</div>
+            </div>
+
+          </div>
+
+          <!-- Training Control Buttons (Pause & Stop Early) -->
+          <div class="w-full max-w-2xl mx-auto flex gap-2.5 pt-1">
+            <button id="btn-pause-train" type="button" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition cursor-pointer">
+              ⏸️ 暫停訓練
+            </button>
+            <button id="btn-stop-early" type="button" class="flex-1 py-2.5 rounded-xl bg-[#FF7043] hover:bg-[#f4511e] text-white text-xs font-extrabold shadow-sm transition cursor-pointer">
+              ⏹️ 結束訓練並查看報告
             </button>
           </div>
         </div>
@@ -227,145 +648,9 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- 2. STATE_CALIBRATING: 3 秒坐姿基準校準畫面 -->
-    <!-- ========================================== -->
-    <div id="state-calibrating" class="hidden flex-1 relative flex flex-col items-center justify-center p-4 bg-slate-950">
-      <div class="relative w-full max-w-4xl aspect-[16/9] max-h-[72vh] bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center">
-        <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
-        <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100"></canvas>
-
-        <!-- Cancel Calibration Button -->
-        <button id="btn-cancel-calib" type="button" class="absolute top-4 left-4 z-30 px-3.5 py-1.5 rounded-xl bg-slate-900/85 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 backdrop-blur transition cursor-pointer">
-          ← 返回設定
-        </button>
-
-        <!-- Semi-transparent Alignment Silhouette Box -->
-        <div class="absolute inset-0 pointer-events-none flex flex-col items-center justify-center border-4 border-dashed border-teal-400/40 rounded-3xl m-6">
-          <div class="w-44 h-56 rounded-[50%] border-2 border-teal-300/80 mb-2 bg-teal-500/5"></div>
-          <div class="w-80 h-10 border-t-2 border-x-2 border-teal-300/80 rounded-t-3xl bg-teal-500/5"></div>
-        </div>
-
-        <!-- 3-Second Giant Countdown Overlay -->
-        <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 space-y-4">
-          <div id="calib-countdown" class="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 animate-bounce">
-            3
-          </div>
-          <h3 class="text-xl md:text-2xl font-bold text-white max-w-lg">
-            請自然坐直、沉肩放鬆、閉上嘴巴
-          </h3>
-          <p class="text-emerald-300 text-sm md:text-base font-medium flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-            正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高低...
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ========================================== -->
-    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (65% / 35%) -->
-    <!-- ========================================== -->
-    <div id="state-training" class="hidden flex-1 flex flex-col md:flex-row overflow-hidden relative">
-
-      <!-- Left Column / Vision Feed (65% width) -->
-      <div id="vision-container" class="w-full md:w-[65%] h-[48vh] md:h-full relative bg-slate-950 flex items-center justify-center border-b md:border-b-0 md:border-r border-slate-800 overflow-hidden">
-        <video id="train-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
-        <canvas id="train-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
-
-        <!-- Top Status Pill Badges -->
-        <div class="absolute top-4 left-4 z-20 flex flex-wrap gap-2 pointer-events-none">
-          <div id="pill-phase" class="px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-emerald-400 border border-emerald-500/40 shadow-lg backdrop-blur">
-            吸氣階段 (閉口鼻吸)
-          </div>
-          <div id="pill-cycle" class="px-3 py-1.5 rounded-xl font-medium text-xs bg-slate-900/90 text-slate-300 border border-slate-700 shadow-lg backdrop-blur">
-            週期: <span id="val-cycle-count" class="font-bold text-white">1</span>
-          </div>
-          <div id="pill-time-left" class="px-3 py-1.5 rounded-xl font-mono text-xs bg-slate-900/90 text-cyan-300 border border-cyan-500/40 shadow-lg backdrop-blur">
-            剩餘: <span id="val-timer-left">02:00</span>
-          </div>
-        </div>
-
-        <!-- Top-Right Live Privacy Mode Switcher Pills -->
-        <div class="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 backdrop-blur shadow-lg">
-          <button id="btn-mode-mirror" type="button" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer">鏡像 AR</button>
-          <button id="btn-mode-mesh" type="button" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-teal-500 text-slate-950 shadow transition cursor-pointer">黑底骨架</button>
-          <button id="btn-mode-minimal" type="button" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer">純節奏球</button>
-        </div>
-
-        <!-- Bottom-Left Privacy Mode Badge -->
-        <div id="badge-mesh-mode" class="absolute bottom-4 left-4 z-20 px-3 py-1 rounded-lg text-xs bg-slate-900/85 text-teal-300 border border-teal-500/30 backdrop-blur pointer-events-none">
-          🔒 去識別化黑底骨架模式
-        </div>
-      </div>
-
-      <!-- Right Column / Guided Pacing & Biofeedback Cards (35% width) -->
-      <div class="w-full md:w-[35%] h-[52vh] md:h-full bg-slate-900/95 flex flex-col p-4 md:p-6 justify-between overflow-y-auto space-y-4">
-        
-        <!-- Dynamic Breathing Pacer Sphere -->
-        <div class="flex-1 flex flex-col items-center justify-center py-2 relative min-h-[180px]">
-          <div id="pacer-outer-ring" class="relative w-44 h-44 md:w-52 md:h-52 rounded-full border-4 border-slate-800/90 bg-slate-950/40 flex items-center justify-center p-2 shadow-inner">
-            <div id="pacer-ball" class="w-24 h-24 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 shadow-2xl shadow-emerald-500/40 flex flex-col items-center justify-center text-slate-950 font-bold transition-all duration-300 transform scale-100">
-              <span id="pacer-action-text" class="text-sm md:text-base font-extrabold tracking-wide">用鼻吸氣</span>
-              <span id="pacer-seconds-text" class="text-xs font-mono font-bold mt-0.5">2.0s</span>
-            </div>
-          </div>
-          <p id="pacer-phase-hint" class="text-xs text-slate-400 mt-3 font-medium">閉口由鼻吸氣 · 雙肩保持下沉</p>
-        </div>
-
-        <!-- 3 Real-Time Clinical Biofeedback Cards -->
-        <div class="space-y-2.5">
-          <!-- Card 1: 嘴型狀態 (PLB Detection) -->
-          <div id="card-status-plb" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-all">
-            <div class="flex items-center space-x-3">
-              <div id="icon-plb" class="w-9 h-9 rounded-xl bg-slate-800/90 flex items-center justify-center text-base">👄</div>
-              <div>
-                <div class="text-xs text-slate-400 font-medium">嘴唇開合與噘唇 (PLB)</div>
-                <div id="text-plb-state" class="text-sm font-bold text-emerald-400">符合標準</div>
-              </div>
-            </div>
-            <div id="badge-plb-score" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700/60">LAR: 0.04</div>
-          </div>
-
-          <!-- Card 2: 雙肩狀態 (Shoulder Hike Proxy) -->
-          <div id="card-status-shoulder" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-all">
-            <div class="flex items-center space-x-3">
-              <div id="icon-shoulder" class="w-9 h-9 rounded-xl bg-slate-800/90 flex items-center justify-center text-base">🧘</div>
-              <div>
-                <div class="text-xs text-slate-400 font-medium">雙肩沉肩 (輔助肌無代償)</div>
-                <div id="text-shoulder-state" class="text-sm font-bold text-emerald-400">放鬆沉肩</div>
-              </div>
-            </div>
-            <div id="badge-shoulder-delta" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700/60">ΔY: +0.01</div>
-          </div>
-
-          <!-- Card 3: 吸呼比率 (I:E Ratio) -->
-          <div id="card-status-ie" class="p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-all">
-            <div class="flex items-center space-x-3">
-              <div class="w-9 h-9 rounded-xl bg-slate-800/90 flex items-center justify-center text-base text-blue-400">⏱️</div>
-              <div>
-                <div class="text-xs text-slate-400 font-medium">當前循環吸呼比 (I:E)</div>
-                <div id="text-ie-state" class="text-sm font-bold text-white">1 : 2.0 (目標達標)</div>
-              </div>
-            </div>
-            <div id="badge-ie-actual" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30">1 : 2.0</div>
-          </div>
-        </div>
-
-        <!-- Training Control Buttons (Pause & Stop Early) -->
-        <div class="flex gap-2.5 pt-1">
-          <button id="btn-pause-train" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer">
-            ⏸️ 暫停訓練
-          </button>
-          <button id="btn-stop-early" type="button" class="flex-1 py-2.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold border border-rose-500/40 transition cursor-pointer">
-            ⏹️ 結束訓練並查看報告
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ========================================== -->
     <!-- High-Contrast Bottom Feedback Banner (≥28px) -->
     <!-- ========================================== -->
-    <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-2xl md:text-3xl leading-snug border-t border-slate-800 bg-slate-900 text-emerald-300">
+    <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-teal-200 bg-white/95 text-[#2E7D32]">
       做得好，繼續跟住節奏慢慢呼吸
     </div>
 
@@ -373,73 +658,73 @@
     <!-- 4. STATE_SUMMARY: 訓練總結與報告畫面 -->
     <!-- ========================================== -->
     <div id="state-summary" class="hidden flex-1 flex flex-col items-center justify-center p-4 md:p-8 overflow-y-auto">
-      <div class="max-w-4xl w-full bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6">
+      <div class="max-w-4xl w-full bg-white/95 backdrop-blur-xl border border-teal-100 rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
         
         <div class="text-center space-y-1.5">
-          <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-            ✅ 呼吸復康訓練順利完成
+          <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-[#2E7D32]">
+            ✅ 舒呼 (SootheBreath) 呼吸復康訓練完成
           </div>
-          <h2 class="text-2xl md:text-3xl font-extrabold text-white">臨床訓練表現摘要報告</h2>
-          <p class="text-slate-400 text-xs md:text-sm">數據已於本機完成匿名化計算，不含生物特徵影像或個人識別個資。</p>
+          <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800">臨床訓練表現摘要報告</h2>
+          <p class="text-slate-500 text-xs md:text-sm">數據已於本機完成匿名化計算，不含生物特徵影像或個人識別個資。</p>
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-          <div class="bg-slate-950/75 p-4 rounded-2xl border border-slate-800 text-center">
-            <span class="text-xs text-slate-400 font-medium">完成循環 / 訓練時長</span>
-            <div id="sum-cycles" class="text-2xl md:text-3xl font-black text-white mt-1">12 週期</div>
-            <div id="sum-duration" class="text-xs text-slate-400 mt-1">總時間 02:00</div>
+          <div class="bg-[#f8fbfd] p-4 rounded-2xl border border-slate-200 text-center">
+            <span class="text-xs text-slate-500 font-semibold">完成循環 / 訓練時長</span>
+            <div id="sum-cycles" class="text-2xl md:text-3xl font-black text-slate-800 mt-1">12 週期</div>
+            <div id="sum-duration" class="text-xs text-slate-500 mt-1">總時間 02:00</div>
           </div>
 
-          <div class="bg-slate-950/75 p-4 rounded-2xl border border-slate-800 text-center">
-            <span class="text-xs text-slate-400 font-medium">平均呼吸頻率 (RR)</span>
-            <div id="sum-rr" class="text-2xl md:text-3xl font-black text-blue-400 mt-1">10.0</div>
-            <div class="text-xs text-slate-400 mt-1">次 / 分鐘 (breaths/min)</div>
+          <div class="bg-[#f8fbfd] p-4 rounded-2xl border border-slate-200 text-center">
+            <span class="text-xs text-slate-500 font-semibold">平均呼吸頻率 (Mean RR)</span>
+            <div id="sum-rr" class="text-2xl md:text-3xl font-black text-sky-600 mt-1">10.0</div>
+            <div class="text-xs text-slate-500 mt-1">次 / 分鐘 (breaths/min)</div>
           </div>
 
-          <div class="bg-slate-950/75 p-4 rounded-2xl border border-slate-800 text-center">
-            <span class="text-xs text-slate-400 font-medium">平均實測吸呼比 (I:E)</span>
-            <div id="sum-ie" class="text-2xl md:text-3xl font-black text-teal-400 mt-1">1 : 2.1</div>
-            <div class="text-xs text-slate-400 mt-1">有效噘唇吹氣比率</div>
+          <div class="bg-[#f8fbfd] p-4 rounded-2xl border border-slate-200 text-center">
+            <span class="text-xs text-slate-500 font-semibold">平均實測吸呼比 (I:E)</span>
+            <div id="sum-ie" class="text-2xl md:text-3xl font-black text-[#4DB6AC] mt-1">1 : 2.1</div>
+            <div class="text-xs text-slate-500 mt-1">有效噘唇吹氣比率</div>
           </div>
 
-          <div class="bg-slate-950/75 p-4 rounded-2xl border border-slate-800 text-center">
-            <span class="text-xs text-slate-400 font-medium">噘唇嘴型達標率</span>
-            <div id="sum-plb-acc" class="text-2xl md:text-3xl font-black text-emerald-400 mt-1">92%</div>
-            <div class="text-xs text-emerald-500/80 mt-1">呼氣吹氣微張吻合</div>
+          <div class="bg-[#f8fbfd] p-4 rounded-2xl border border-slate-200 text-center">
+            <span class="text-xs text-slate-500 font-semibold">噘唇嘴型達標率</span>
+            <div id="sum-plb-acc" class="text-2xl md:text-3xl font-black text-[#2E7D32] mt-1">92%</div>
+            <div class="text-xs text-emerald-700 mt-1">呼氣吹氣微張吻合</div>
           </div>
 
-          <div class="bg-slate-950/75 p-4 rounded-2xl border border-slate-800 text-center">
-            <span class="text-xs text-slate-400 font-medium">雙肩沉肩放鬆率</span>
-            <div id="sum-shoulder-acc" class="text-2xl md:text-3xl font-black text-emerald-400 mt-1">96%</div>
-            <div class="text-xs text-slate-400 mt-1">無輔助肌聳肩代償</div>
+          <div class="bg-[#f8fbfd] p-4 rounded-2xl border border-slate-200 text-center">
+            <span class="text-xs text-slate-500 font-semibold">雙肩沉肩放鬆率</span>
+            <div id="sum-shoulder-acc" class="text-2xl md:text-3xl font-black text-[#2E7D32] mt-1">96%</div>
+            <div class="text-xs text-slate-500 mt-1">無輔助肌聳肩代償</div>
           </div>
 
-          <div class="bg-gradient-to-br from-emerald-950/60 to-slate-950/80 p-4 rounded-2xl border border-emerald-500/30 text-center flex flex-col justify-center">
-            <span class="text-xs text-emerald-300 font-medium">綜合臨床質素評級</span>
-            <div id="sum-grade" class="text-2xl md:text-3xl font-black text-emerald-300 mt-1">優秀 (A)</div>
-            <div class="text-xs text-emerald-400/70 mt-1">呼吸形態平穩達標</div>
+          <div class="bg-emerald-50/90 p-4 rounded-2xl border border-emerald-200 text-center flex flex-col justify-center">
+            <span class="text-xs text-[#2E7D32] font-bold">綜合臨床質素評級</span>
+            <div id="sum-grade" class="text-2xl md:text-3xl font-black text-[#2E7D32] mt-1">優秀 (A)</div>
+            <div class="text-xs text-emerald-700 mt-1">呼吸形態平穩達標</div>
           </div>
         </div>
 
         <div class="flex flex-col sm:flex-row gap-3 pt-2">
-          <button id="btn-export-csv" type="button" class="flex-1 py-3.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm transition shadow-lg shadow-teal-600/20 flex items-center justify-center gap-2 cursor-pointer">
+          <button id="btn-export-csv" type="button" class="flex-1 py-3.5 px-4 rounded-xl bg-[#4DB6AC] hover:bg-[#3d9c92] text-white font-extrabold text-sm transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
             📥 下載匿名 CSV 臨床報表
           </button>
-          <button id="btn-save-local" type="button" class="py-3.5 px-5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm border border-slate-700 transition flex items-center justify-center gap-2 cursor-pointer">
+          <button id="btn-save-local" type="button" class="py-3.5 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm border border-slate-200 transition flex items-center justify-center gap-2 cursor-pointer">
             💾 儲存至本地歷史紀錄
           </button>
-          <button id="btn-restart" type="button" class="py-3.5 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer">
+          <button id="btn-restart" type="button" class="py-3.5 px-5 rounded-xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
             🔄 重新開始訓練
           </button>
         </div>
 
-        <div id="box-history" class="pt-3 border-t border-slate-800">
-          <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
-            <span class="font-medium">本機訓練歷史紀錄 (最近 10 次)</span>
-            <button id="btn-clear-history" type="button" class="hover:text-rose-400 transition cursor-pointer">清空紀錄</button>
+        <div id="box-history" class="pt-3 border-t border-slate-200">
+          <div class="flex justify-between items-center text-xs text-slate-500 mb-2">
+            <span class="font-bold">本機訓練歷史紀錄 (最近 10 次)</span>
+            <button id="btn-clear-history" type="button" class="hover:text-rose-600 font-semibold transition cursor-pointer">清空紀錄</button>
           </div>
-          <div id="list-history" class="space-y-1.5 max-h-36 overflow-y-auto text-xs font-mono text-slate-300">
-            <div class="text-slate-500 py-2 text-center">暫無本地歷史紀錄</div>
+          <div id="list-history" class="space-y-1.5 max-h-36 overflow-y-auto text-xs font-mono text-slate-700">
+            <div class="text-slate-400 py-2 text-center">暫無本地歷史紀錄</div>
           </div>
         </div>
 
@@ -451,81 +736,85 @@
   <!-- ========================================== -->
   <!-- Collapsible Debug Drawer & Backdrop -->
   <!-- ========================================== -->
-  <div id="debug-backdrop" class="hidden fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-40"></div>
-  <div id="debug-drawer" class="fixed right-0 top-0 bottom-0 w-80 md:w-96 bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 p-5 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto space-y-4">
-    <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-      <h3 class="text-sm font-bold text-white flex items-center gap-2">
-        🛠️ 臨床演算法調試面板
+  <div id="debug-backdrop" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40"></div>
+  <div id="debug-drawer" class="fixed right-0 top-0 bottom-0 w-80 md:w-96 bg-white/95 backdrop-blur-xl border-l border-teal-100 p-5 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto space-y-4 text-slate-800">
+    <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+      <h3 class="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+        🛠️ 臨床演算法調試面板 (Debug)
       </h3>
-      <button id="btn-close-debug" type="button" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-base font-bold flex items-center justify-center cursor-pointer">&times;</button>
+      <button id="btn-close-debug" type="button" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold flex items-center justify-center cursor-pointer">&times;</button>
     </div>
 
     <div class="space-y-2">
-      <h4 class="text-xs font-semibold text-teal-400 uppercase tracking-wider">即時數值監測 (Real-Time Metrics)</h4>
+      <h4 class="text-xs font-bold text-teal-700 uppercase tracking-wider">即時數值監測 (Real-Time Metrics)</h4>
       <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">LAR (嘴唇開合比)</span>
-          <span id="dbg-val-lar" class="font-bold text-white text-sm">0.040</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">LAR (嘴唇開合比)</span>
+          <span id="dbg-val-lar" class="font-extrabold text-slate-800 text-sm">0.040</span>
         </div>
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">mouthPucker (噘唇)</span>
-          <span id="dbg-val-pucker" class="font-bold text-white text-sm">0.100</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">mouthPucker (噘唇)</span>
+          <span id="dbg-val-pucker" class="font-extrabold text-slate-800 text-sm">0.100</span>
         </div>
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">mouthFunnel (漏斗)</span>
-          <span id="dbg-val-funnel" class="font-bold text-white text-sm">0.100</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">mouthFunnel (漏斗)</span>
+          <span id="dbg-val-funnel" class="font-extrabold text-slate-800 text-sm">0.100</span>
         </div>
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">ΔY_shoulder (聳肩)</span>
-          <span id="dbg-val-shoulder" class="font-bold text-white text-sm">0.010</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">ΔY_shoulder (聳肩)</span>
+          <span id="dbg-val-shoulder" class="font-extrabold text-slate-800 text-sm">0.010</span>
         </div>
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">D_eye (雙眼間距)</span>
-          <span id="dbg-val-deye" class="font-bold text-white text-sm">0.220</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">D_eye (雙眼間距)</span>
+          <span id="dbg-val-deye" class="font-extrabold text-slate-800 text-sm">0.220</span>
         </div>
-        <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-          <span class="text-slate-400 block">Shoulder_Tilt</span>
-          <span id="dbg-val-tilt" class="font-bold text-white text-sm">0.020</span>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+          <span class="text-slate-500 block">Shoulder_Tilt</span>
+          <span id="dbg-val-tilt" class="font-extrabold text-slate-800 text-sm">0.020</span>
+        </div>
+        <div class="col-span-2 bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 flex justify-between items-center">
+          <span class="text-emerald-800 font-sans font-semibold">平均呼吸頻率 (Mean RR)</span>
+          <span id="dbg-val-rr" class="font-extrabold text-[#2E7D32] text-sm">10.0 BPM</span>
         </div>
       </div>
     </div>
 
-    <div class="space-y-3.5 pt-2 border-t border-slate-800">
-      <h4 class="text-xs font-semibold text-teal-400 uppercase tracking-wider">臨床判定閾值微調 (Thresholds)</h4>
+    <div class="space-y-3.5 pt-2 border-t border-slate-200">
+      <h4 class="text-xs font-bold text-teal-700 uppercase tracking-wider">臨床判定閾值微調 (Thresholds)</h4>
       
       <div class="space-y-1">
-        <div class="flex justify-between text-xs text-slate-300">
+        <div class="flex justify-between text-xs text-slate-700 font-medium">
           <span>吸氣 LAR 上限 (閉口鼻吸)</span>
-          <span id="dbg-lbl-lar-in-max" class="font-mono text-emerald-400 font-bold">0.06</span>
+          <span id="dbg-lbl-lar-in-max" class="font-mono text-[#2E7D32] font-bold">0.06</span>
         </div>
-        <input id="dbg-range-lar-in-max" type="range" min="0.03" max="0.12" step="0.01" value="0.06" class="w-full accent-emerald-500">
+        <input id="dbg-range-lar-in-max" type="range" min="0.03" max="0.12" step="0.01" value="0.06" class="w-full">
       </div>
 
       <div class="space-y-1">
-        <div class="flex justify-between text-xs text-slate-300">
+        <div class="flex justify-between text-xs text-slate-700 font-medium">
           <span>呼氣 PLB mouthPucker 噘唇閾值</span>
-          <span id="dbg-lbl-pucker-min" class="font-mono text-emerald-400 font-bold">0.40</span>
+          <span id="dbg-lbl-pucker-min" class="font-mono text-[#2E7D32] font-bold">0.40</span>
         </div>
-        <input id="dbg-range-pucker-min" type="range" min="0.20" max="0.70" step="0.05" value="0.40" class="w-full accent-emerald-500">
+        <input id="dbg-range-pucker-min" type="range" min="0.20" max="0.70" step="0.05" value="0.40" class="w-full">
       </div>
 
       <div class="space-y-1">
-        <div class="flex justify-between text-xs text-slate-300">
+        <div class="flex justify-between text-xs text-slate-700 font-medium">
           <span>呼氣 PLB mouthFunnel 閾值</span>
-          <span id="dbg-lbl-funnel-min" class="font-mono text-emerald-400 font-bold">0.35</span>
+          <span id="dbg-lbl-funnel-min" class="font-mono text-[#2E7D32] font-bold">0.35</span>
         </div>
-        <input id="dbg-range-funnel-min" type="range" min="0.15" max="0.60" step="0.05" value="0.35" class="w-full accent-emerald-500">
+        <input id="dbg-range-funnel-min" type="range" min="0.15" max="0.60" step="0.05" value="0.35" class="w-full">
       </div>
 
       <div class="space-y-1">
-        <div class="flex justify-between text-xs text-slate-300">
+        <div class="flex justify-between text-xs text-slate-700 font-medium">
           <span>聳肩代償 ΔY_shoulder 閾值</span>
-          <span id="dbg-lbl-shoulder-max" class="font-mono text-rose-400 font-bold">0.12</span>
+          <span id="dbg-lbl-shoulder-max" class="font-mono text-rose-600 font-bold">0.12</span>
         </div>
-        <input id="dbg-range-shoulder-max" type="range" min="0.05" max="0.25" step="0.01" value="0.12" class="w-full accent-rose-500">
+        <input id="dbg-range-shoulder-max" type="range" min="0.05" max="0.25" step="0.01" value="0.12" class="w-full">
       </div>
 
-      <button id="btn-reset-thresholds" type="button" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer">
+      <button id="btn-reset-thresholds" type="button" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition cursor-pointer">
         🔄 恢復預設臨床推薦閾值
       </button>
     </div>
@@ -534,27 +823,27 @@
   <!-- ========================================== -->
   <!-- Camera Diagnostic & Error Resolution Modal (Section 6) -->
   <!-- ========================================== -->
-  <div id="modal-camera-error" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="max-w-lg w-full bg-slate-900 border border-rose-500/40 rounded-3xl p-6 shadow-2xl space-y-4">
-      <div class="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl border border-rose-500/30">
+  <div id="modal-camera-error" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="max-w-lg w-full bg-white border border-rose-200 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-800">
+      <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center text-2xl border border-rose-200">
         📷
       </div>
       <div>
-        <h3 id="modal-error-title" class="text-xl font-bold text-white">相機啟動受阻</h3>
-        <p id="modal-error-desc" class="text-sm text-slate-400 mt-1">瀏覽器無法正常存取視訊鏡頭硬體。</p>
+        <h3 id="modal-error-title" class="text-xl font-extrabold text-slate-800">相機啟動受阻</h3>
+        <p id="modal-error-desc" class="text-sm text-slate-500 mt-1">瀏覽器無法正常存取視訊鏡頭硬體。</p>
       </div>
 
-      <div id="modal-error-steps" class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-2 leading-relaxed">
+      <div id="modal-error-steps" class="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-2 leading-relaxed">
       </div>
 
       <div class="flex flex-col sm:flex-row gap-2.5 pt-2">
-        <button id="btn-modal-retry" type="button" class="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition cursor-pointer">
+        <button id="btn-modal-retry" type="button" class="flex-1 py-3 rounded-xl bg-[#2E7D32] hover:bg-[#256628] text-white font-bold text-sm transition cursor-pointer">
           重試啟動相機
         </button>
-        <button id="btn-modal-demo" type="button" class="flex-1 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm transition cursor-pointer">
+        <button id="btn-modal-demo" type="button" class="flex-1 py-3 rounded-xl bg-[#4DB6AC] hover:bg-[#3d9c92] text-white font-bold text-sm transition cursor-pointer">
           🧪 免鏡頭模擬訓練
         </button>
-        <button id="btn-modal-close" type="button" class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm border border-slate-700 cursor-pointer">
+        <button id="btn-modal-close" type="button" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm border border-slate-200 cursor-pointer">
           返回主畫面
         </button>
       </div>
@@ -562,25 +851,25 @@
   </div>
 
   <!-- Floating Non-Blocking Toast Notification -->
-  <div id="toast-notification" class="hidden opacity-0 translate-y-4 fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-emerald-500/40 text-emerald-300 text-xs font-semibold shadow-2xl backdrop-blur transition-all duration-300 pointer-events-none">
+  <div id="toast-notification" class="hidden opacity-0 translate-y-4 fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-2xl bg-white/95 border border-teal-200 text-[#2E7D32] text-xs font-extrabold shadow-xl backdrop-blur transition-all duration-300 pointer-events-none">
     <span id="toast-text">操作成功</span>
   </div>
 
-  <!-- Clean old Service Worker caches & register v3 Service Worker -->
+  <!-- Clean old Service Worker caches & register v4 Service Worker -->
   <script>
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'breathguide-v3.0.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v4.0.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=3')
+        navigator.serviceWorker.register('sw.js?v=4')
           .then(reg => {
             reg.update();
-            console.log('BreathGuide PWA Service Worker v3 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v4 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -588,12 +877,13 @@
   </script>
 
   <!-- Load ESM JavaScript Application with cache-busting query string + self-contained fallback -->
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
   <script type="module">
 /**
- * BreathGuide — 實時呼吸視覺生物反饋系統 (PWA)
- * ESM Core Engine v3.0: MediaPipe Tasks Vision 0.10.14, Calibration, Math & Feedback
- * 嚴格符合 PRD Section 0 至 Section 7 規範（全面採用「噘唇」術語與互動美學升級）
+ * 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (PWA)
+ * ESM Core Engine v4.0: MediaPipe Tasks Vision 0.10.14, 10s Calibration + Confirmation,
+ * Human Mode (1.jpg-4.jpg), Centered Pacer Mode, Real-Time Average RR, Math & Feedback
+ * 嚴格保留全部臨床偵測邏輯與預設 THRESHOLDS
  */
 
 // ============================================================================
@@ -611,7 +901,7 @@ const PHASES = {
   EXHALE: 'EXHALE'
 };
 
-// 預設臨床閾值 (Default Clinical Thresholds)
+// 預設臨床閾值 (Default Clinical Thresholds — 嚴格保持不變)
 const THRESHOLDS = {
   larInhaleMax: 0.06,
   larInhaleErr: 0.08,
@@ -627,6 +917,18 @@ const THRESHOLDS = {
   shoulderHikeNormal: 0.10,
   shoulderTiltMax: 0.15,
   earlyExhaleRatio: 0.70
+};
+
+// 真人模式圖片路徑映射 (1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+const HUMAN_IMAGES = {
+  male: {
+    inhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['1.jpg']) || '1.jpg',
+    exhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['2.jpg']) || '2.jpg'
+  },
+  female: {
+    inhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['3.jpg']) || '3.jpg',
+    exhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['4.jpg']) || '4.jpg'
+  }
 };
 
 // 確保 MediaPipe 視訊時間戳嚴格遞增
@@ -649,15 +951,19 @@ const AppState = {
   modelsLoadingPromise: null,
   lastFaceResult: null,
   lastPoseResult: null,
+  calibTimerId: null,
+  isCalibConfirming: false,
   
   // 使用者設定
-  inhaleTarget: 2.0,      // 秒
-  exhaleTarget: 4.0,      // 秒
-  totalDuration: 120,     // 秒
+  inhaleTarget: 2.0,          // 秒
+  exhaleTarget: 4.0,          // 秒
+  totalDuration: 120,         // 秒
   privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist'
+  displayMode: 'balloon',     // 'balloon' | 'human'
+  humanGender: 'male',        // 'male' | 'female'
   voiceEnabled: true,
   
-  // 3秒基準校準結果 (Baseline Calibration)
+  // 10秒基準校準結果 (前7秒收集基準，後3秒確認位置)
   calibration: {
     dEyeBase: 0.22,
     yShoulderBase: 0.68,
@@ -665,7 +971,8 @@ const AppState = {
     samplesCount: 0,
     sumDEye: 0,
     sumYShoulder: 0,
-    sumLar: 0
+    sumLar: 0,
+    elapsedCalibSec: 0
   },
 
   // 實時推論變數
@@ -687,11 +994,15 @@ const AppState = {
     elapsedSeconds: 0,
     currentPhase: PHASES.INHALE,
     phaseStartTime: 0,
+    cycleStartTime: 0,
     cycleIndex: 0,
     
     // 當前週期累計有效時間
     tInActual: 0,
     tExActual: 0,
+    
+    // 實時平均呼吸頻率 (Average Respiratory Rate, breaths/min)
+    avgRR: 10.0,
     
     // 全程統計指標
     cyclesHistory: [],
@@ -737,49 +1048,81 @@ function cacheDomElements() {
     toast: document.getElementById('toast-notification'),
     toastText: document.getElementById('toast-text'),
 
-    // 設定控制器
+    // 頂部導航欄按鈕
+    btnHeaderVoice: document.getElementById('btn-header-voice'),
+
+    // 設定控制器 (STATE_IDLE)
     inputInhale: document.getElementById('input-inhale-time'),
     inputExhale: document.getElementById('input-exhale-time'),
     valInhale: document.getElementById('val-inhale-time'),
     valExhale: document.getElementById('val-exhale-time'),
     labelIePreset: document.getElementById('label-ie-preset'),
+    valTargetBpm: document.getElementById('val-target-bpm'),
+    valCycleTotal: document.getElementById('val-cycle-total'),
     selectPrivacy: document.getElementById('select-privacy-mode'),
     selectDuration: document.getElementById('select-duration'),
     toggleVoice: document.getElementById('toggle-voice'),
+    btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
+    btnPacerHuman: document.getElementById('btn-pacer-human'),
+    wrapperHumanGender: document.getElementById('wrapper-human-gender'),
+    btnGenderMale: document.getElementById('btn-gender-male'),
+    btnGenderFemale: document.getElementById('btn-gender-female'),
     btnStart: document.getElementById('btn-start'),
     btnStartDemo: document.getElementById('btn-start-demo'),
-    btnCancelCalib: document.getElementById('btn-cancel-calib'),
-    btnPauseTrain: document.getElementById('btn-pause-train'),
-    btnStopEarly: document.getElementById('btn-stop-early'),
-    btnRestart: document.getElementById('btn-restart'),
-    btnExportCsv: document.getElementById('btn-export-csv'),
-    btnSaveLocal: document.getElementById('btn-save-local'),
-    btnClearHistory: document.getElementById('btn-clear-history'),
 
-    // 訓練畫面即時模式切換按鈕
-    btnModeMirror: document.getElementById('btn-mode-mirror'),
-    btnModeMesh: document.getElementById('btn-mode-mesh'),
-    btnModeMinimal: document.getElementById('btn-mode-minimal'),
-
-    // 校準與訓練視訊/畫布
+    // 10秒校準與確認機制元件 (STATE_CALIBRATING)
     calibVideo: document.getElementById('calib-video'),
     calibCanvas: document.getElementById('calib-canvas'),
+    btnCancelCalib: document.getElementById('btn-cancel-calib'),
+    calibCountdownOverlay: document.getElementById('calib-countdown-overlay'),
+    calibStageBadge: document.getElementById('calib-stage-badge'),
     calibCountdown: document.getElementById('calib-countdown'),
+    calibTitle: document.getElementById('calib-title'),
+    calibSubtitle: document.getElementById('calib-subtitle'),
+    calibProgressBar: document.getElementById('calib-progress-bar'),
+    calibConfirmOverlay: document.getElementById('calib-confirm-overlay'),
+    calibSummaryMetrics: document.getElementById('calib-summary-metrics'),
+    btnConfirmStart: document.getElementById('btn-confirm-start'),
+    btnRecalibrate: document.getElementById('btn-recalibrate'),
+    btnAdjustSettings: document.getElementById('btn-adjust-settings'),
+
+    // 訓練畫面視訊、畫布與佈局容器 (STATE_TRAINING)
+    visionContainer: document.getElementById('vision-container'),
+    guidancePanel: document.getElementById('guidance-panel'),
     trainVideo: document.getElementById('train-video'),
     trainCanvas: document.getElementById('train-canvas'),
     badgeMeshMode: document.getElementById('badge-mesh-mode'),
 
-    // 狀態欄與節奏球
+    // 訓練畫面頂部狀態與右上角控制按鈕
     pillPhase: document.getElementById('pill-phase'),
     pillCycle: document.getElementById('pill-cycle'),
     valCycleCount: document.getElementById('val-cycle-count'),
     valTimerLeft: document.getElementById('val-timer-left'),
+    valLiveRr: document.getElementById('val-live-rr'),
+    btnModeMirror: document.getElementById('btn-mode-mirror'),
+    btnModeMesh: document.getElementById('btn-mode-mesh'),
+    btnModeMinimal: document.getElementById('btn-mode-minimal'),
+    btnTrainBalloon: document.getElementById('btn-train-balloon'),
+    btnTrainMale: document.getElementById('btn-train-male'),
+    btnTrainFemale: document.getElementById('btn-train-female'),
+    btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
+
+    // 呼吸節奏球與真人示範元件
+    pacerVisualArea: document.getElementById('pacer-visual-area'),
+    pacerOuterRing: document.getElementById('pacer-outer-ring'),
     pacerBall: document.getElementById('pacer-ball'),
     pacerActionText: document.getElementById('pacer-action-text'),
     pacerSecondsText: document.getElementById('pacer-seconds-text'),
+    humanDemoWrapper: document.getElementById('human-demo-wrapper'),
+    humanDemoBox: document.getElementById('human-demo-box'),
+    imgHumanInhale: document.getElementById('img-human-inhale'),
+    imgHumanExhale: document.getElementById('img-human-exhale'),
+    humanActionText: document.getElementById('human-action-text'),
+    humanSecondsText: document.getElementById('human-seconds-text'),
     pacerPhaseHint: document.getElementById('pacer-phase-hint'),
 
-    // 三張指示燈卡
+    // 四張實時生物反饋指示卡 (含新增平均呼吸頻率卡)
+    biofeedbackCardsGrid: document.getElementById('biofeedback-cards-grid'),
     cardPlb: document.getElementById('card-status-plb'),
     textPlbState: document.getElementById('text-plb-state'),
     badgePlbScore: document.getElementById('badge-plb-score'),
@@ -789,6 +1132,27 @@ function cacheDomElements() {
     cardIe: document.getElementById('card-status-ie'),
     textIeState: document.getElementById('text-ie-state'),
     badgeIeActual: document.getElementById('badge-ie-actual'),
+    cardRr: document.getElementById('card-status-rr'),
+    textRrState: document.getElementById('text-rr-state'),
+    badgeRrActual: document.getElementById('badge-rr-actual'),
+
+    // 訓練底部控制按鈕
+    btnPauseTrain: document.getElementById('btn-pause-train'),
+    btnStopEarly: document.getElementById('btn-stop-early'),
+
+    // 總結報告畫面元件 (STATE_SUMMARY)
+    btnRestart: document.getElementById('btn-restart'),
+    btnExportCsv: document.getElementById('btn-export-csv'),
+    btnSaveLocal: document.getElementById('btn-save-local'),
+    btnClearHistory: document.getElementById('btn-clear-history'),
+    sumCycles: document.getElementById('sum-cycles'),
+    sumDuration: document.getElementById('sum-duration'),
+    sumRr: document.getElementById('sum-rr'),
+    sumIe: document.getElementById('sum-ie'),
+    sumPlbAcc: document.getElementById('sum-plb-acc'),
+    sumShoulderAcc: document.getElementById('sum-shoulder-acc'),
+    sumGrade: document.getElementById('sum-grade'),
+    listHistory: document.getElementById('list-history'),
 
     // 調試面板 (Debug Drawer)
     btnToggleDebug: document.getElementById('btn-toggle-debug'),
@@ -801,6 +1165,7 @@ function cacheDomElements() {
     dbgShoulder: document.getElementById('dbg-val-shoulder'),
     dbgDeye: document.getElementById('dbg-val-deye'),
     dbgTilt: document.getElementById('dbg-val-tilt'),
+    dbgRr: document.getElementById('dbg-val-rr'),
     dbgRangeLarInMax: document.getElementById('dbg-range-lar-in-max'),
     dbgLblLarInMax: document.getElementById('dbg-lbl-lar-in-max'),
     dbgRangePuckerMin: document.getElementById('dbg-range-pucker-min'),
@@ -818,17 +1183,7 @@ function cacheDomElements() {
     modalErrorSteps: document.getElementById('modal-error-steps'),
     btnModalRetry: document.getElementById('btn-modal-retry'),
     btnModalDemo: document.getElementById('btn-modal-demo'),
-    btnModalClose: document.getElementById('btn-modal-close'),
-
-    // 總結報告數值
-    sumCycles: document.getElementById('sum-cycles'),
-    sumDuration: document.getElementById('sum-duration'),
-    sumRr: document.getElementById('sum-rr'),
-    sumIe: document.getElementById('sum-ie'),
-    sumPlbAcc: document.getElementById('sum-plb-acc'),
-    sumShoulderAcc: document.getElementById('sum-shoulder-acc'),
-    sumGrade: document.getElementById('sum-grade'),
-    listHistory: document.getElementById('list-history')
+    btnModalClose: document.getElementById('btn-modal-close')
   };
 }
 
@@ -900,7 +1255,7 @@ async function initMediaPipeVision() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        console.log("MediaPipe Tasks Vision 0.10.14 (GPU) 模型加載成功");
+        console.log("舒呼 SootheBreath — MediaPipe Tasks Vision 0.10.14 (GPU) 模型加載成功");
       } catch (gpuErr) {
         console.warn("GPU 加速初始化失敗，自動切換至 CPU 模式:", gpuErr);
         AppState.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
@@ -921,7 +1276,7 @@ async function initMediaPipeVision() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        console.log("MediaPipe Tasks Vision 0.10.14 (CPU) 模型加載成功");
+        console.log("舒呼 SootheBreath — MediaPipe Tasks Vision 0.10.14 (CPU) 模型加載成功");
       }
       return true;
     } catch (err) {
@@ -961,6 +1316,13 @@ async function startCamera(videoElement) {
   };
 
   try {
+    // 若已有運行中的視訊串流且有效，直接複用避免重複請求閃爍
+    if (AppState.stream && AppState.stream.active) {
+      videoElement.srcObject = AppState.stream;
+      await videoElement.play().catch(() => {});
+      return true;
+    }
+
     if (AppState.stream) {
       AppState.stream.getTracks().forEach(track => track.stop());
     }
@@ -1025,7 +1387,7 @@ function showCameraDiagnosticError(error) {
       stepsHtml = `
         <p>1. 請檢查手提電腦 (Laptop) 鏡頭上方的<b>實體防窺撥片 (Privacy Shutter)</b> 是否已打開。</p>
         <p>2. 部分品牌電腦（如 Lenovo、ASUS、MSI）配有鍵盤相機開關快速鍵（例如 Fn + F8 或 F10）。</p>
-        <p>3. 若目前裝置無鏡頭，你可點擊下方「<b>進入免鏡頭模擬訓練</b>」預覽完整功能。</p>
+        <p>3. 若目前裝置無鏡頭，你可點擊下方「<b>🧪 免鏡頭模擬訓練</b>」預覽完整功能。</p>
       `;
       break;
 
@@ -1035,14 +1397,14 @@ function showCameraDiagnosticError(error) {
       desc = "相機硬體正在被其他視訊通話或後台程式使用。";
       stepsHtml = `
         <p>1. 請檢查並先完全關閉 <b>Zoom、Microsoft Teams、Google Meet、FaceTime</b> 或其他相機軟件。</p>
-        <p>2. 重新整理本網頁後再試一次，或先使用「<b>免鏡頭模擬訓練</b>」。</p>
+        <p>2. 重新整理本網頁後再試一次，或先使用「<b>🧪 免鏡頭模擬訓練</b>」。</p>
       `;
       break;
 
     default:
       title = "未知相機存取錯誤 (" + (error.name || "Error") + ")";
       desc = error.message || "系統發生未預期的鏡頭存取問題。";
-      stepsHtml = `<p>請嘗試重新整理瀏覽器，或點擊下方「免鏡頭模擬訓練」體驗完整呼吸節奏導引。</p>`;
+      stepsHtml = `<p>請嘗試重新整理瀏覽器，或點擊下方「🧪 免鏡頭模擬訓練」體驗完整呼吸節奏導引。</p>`;
       break;
   }
 
@@ -1053,7 +1415,7 @@ function showCameraDiagnosticError(error) {
 }
 
 // ============================================================================
-// 5. 核心電腦視覺運算公式 (Section 3 Math & Algorithms)
+// 5. 核心電腦視覺運算公式 (Section 3 Math & Algorithms — 嚴格保留全部臨床邏輯)
 // ============================================================================
 
 /**
@@ -1135,7 +1497,6 @@ function generateSimulatedDetections(now) {
   const pucker = isExhale ? (0.58 + wave * 0.08) : 0.08;
   const funnel = isExhale ? (0.48 + wave * 0.06) : 0.06;
 
-  // 建立模擬面部特徵點
   const face = [];
   for (let i = 0; i < 468; i++) {
     face.push({ x: 0.5, y: 0.42, z: 0 });
@@ -1147,7 +1508,6 @@ function generateSimulatedDetections(now) {
   face[13] = { x: 0.50, y: 0.49 - (lar * 0.05) };
   face[14] = { x: 0.50, y: 0.49 + (lar * 0.05) };
 
-  // 臉部橢圓輪廓點
   const ovalIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
   ovalIndices.forEach((idx, k) => {
     const angle = (k / ovalIndices.length) * Math.PI * 2 - Math.PI / 2;
@@ -1157,7 +1517,6 @@ function generateSimulatedDetections(now) {
     };
   });
 
-  // 雙肩特徵點
   const pose = [];
   for (let i = 0; i < 33; i++) {
     pose.push({ x: 0.5, y: 0.7, z: 0 });
@@ -1195,7 +1554,7 @@ function initTTS() {
     const voices = window.speechSynthesis.getVoices();
     AppState.tts.speechSynthesisVoice = 
       voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-Hant-HK') ||
-      voices.find(v => v.lang.includes('HK')) ||
+      voices.find(v => v.lang.includes('HK') || v.lang.includes('yue')) ||
       voices.find(v => v.lang === 'zh-TW') ||
       voices.find(v => v.lang.startsWith('zh')) ||
       null;
@@ -1225,6 +1584,17 @@ function speakText(text, isPhaseSwitch = false) {
     AppState.tts.lastSpokenTime = now;
   } catch (err) {
     console.warn("語音合成播放失敗:", err);
+  }
+}
+
+function syncVoiceUI() {
+  if (dom.toggleVoice) {
+    dom.toggleVoice.checked = AppState.voiceEnabled;
+  }
+  if (dom.btnHeaderVoice) {
+    dom.btnHeaderVoice.innerHTML = AppState.voiceEnabled
+      ? `<span>🔊</span><span class="hidden sm:inline">語音導航</span>`
+      : `<span>🔇</span><span class="hidden sm:inline">已靜音</span>`;
   }
 }
 
@@ -1267,21 +1637,26 @@ function renderBottomBanner(message, priority) {
   dom.bottomBanner.classList.remove('hidden');
 
   if (priority <= 2) {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-rose-500/80 bg-rose-950/95 text-rose-100";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-rose-400 bg-rose-600 text-white shadow-lg";
   } else if (priority <= 4) {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-amber-500/80 bg-amber-950/95 text-amber-100";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-amber-400 bg-amber-500 text-white shadow-lg";
   } else {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-emerald-500/60 bg-slate-900/95 text-emerald-300";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-teal-200 bg-white/95 text-[#2E7D32] shadow-md";
   }
 }
 
 // ============================================================================
 // 8. 狀態一至四之生命週期 (State Machine Lifecycle)
 // ============================================================================
-
 function switchViewState(targetState) {
+  if (AppState.calibTimerId) {
+    clearInterval(AppState.calibTimerId);
+    AppState.calibTimerId = null;
+  }
+
   AppState.currentState = targetState;
   AppState.isPaused = false;
+  AppState.isCalibConfirming = false;
 
   dom.stateIdle.classList.add('hidden');
   dom.stateCalib.classList.add('hidden');
@@ -1315,10 +1690,27 @@ function switchViewState(targetState) {
 }
 
 // ----------------------------------------------------------------------------
-// 3 秒坐姿基準校準 (Section 3.1 CALIBRATING State)
+// 10 秒坐姿基準校準 + 確認機制 (Requirement 4: 前7秒收集基準，後3秒顯示「請確認位置」)
 // ----------------------------------------------------------------------------
 async function runCalibrationSequence() {
+  if (AppState.calibTimerId) {
+    clearInterval(AppState.calibTimerId);
+    AppState.calibTimerId = null;
+  }
+  AppState.isCalibConfirming = false;
+
+  // 顯示倒數覆蓋層，隱藏結束後的確認面板
+  if (dom.calibCountdownOverlay) dom.calibCountdownOverlay.classList.remove('hidden');
+  if (dom.calibConfirmOverlay) dom.calibConfirmOverlay.classList.add('hidden');
+
   dom.calibCountdown.textContent = "準備中";
+  if (dom.calibStageBadge) {
+    dom.calibStageBadge.textContent = "步驟 1/2：收集基準坐姿 (前 7 秒)";
+    dom.calibStageBadge.className = "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#4DB6AC]/20 text-teal-800 border border-[#4DB6AC]/40";
+  }
+  if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
+  if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在啟動鏡頭並準備收集 7 秒基準坐姿...";
+  if (dom.calibProgressBar) dom.calibProgressBar.style.width = "0%";
 
   const started = await startCamera(dom.calibVideo);
   if (!started) {
@@ -1331,6 +1723,7 @@ async function runCalibrationSequence() {
     await initMediaPipeVision();
   }
 
+  // 重置校準累計器
   AppState.calibration = {
     dEyeBase: 0.22,
     yShoulderBase: 0.72,
@@ -1338,36 +1731,76 @@ async function runCalibrationSequence() {
     samplesCount: 0,
     sumDEye: 0,
     sumYShoulder: 0,
-    sumLar: 0
+    sumLar: 0,
+    elapsedCalibSec: 0
   };
 
   speakText("請自然坐直、沉肩放鬆、閉上嘴巴，正在記錄基準坐姿", true);
 
-  let secondsRemaining = 3;
+  const totalCalibSeconds = 10;
+  let secondsRemaining = totalCalibSeconds;
   dom.calibCountdown.textContent = secondsRemaining;
+  if (dom.calibSubtitle) {
+    dom.calibSubtitle.textContent = "前 7 秒：正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+  }
 
-  const timer = setInterval(() => {
+  AppState.calibTimerId = setInterval(() => {
     if (AppState.currentState !== STATES.CALIBRATING) {
-      clearInterval(timer);
+      clearInterval(AppState.calibTimerId);
+      AppState.calibTimerId = null;
       return;
     }
+
     secondsRemaining--;
-    if (secondsRemaining > 0) {
+    const elapsed = totalCalibSeconds - secondsRemaining;
+    AppState.calibration.elapsedCalibSec = elapsed;
+
+    if (dom.calibProgressBar) {
+      dom.calibProgressBar.style.width = `${Math.min(100, (elapsed / totalCalibSeconds) * 100)}%`;
+    }
+
+    if (secondsRemaining > 3) {
+      // 前 7 秒 (倒數 10 -> 4)：收集基準
       dom.calibCountdown.textContent = secondsRemaining;
+      if (dom.calibStageBadge) {
+        dom.calibStageBadge.textContent = `步驟 1/2：收集基準坐姿 (剩餘 ${secondsRemaining - 3} 秒)`;
+      }
+      if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
+      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+    } else if (secondsRemaining > 0) {
+      // 後 3 秒 (倒數 3 -> 1)：顯示「請確認位置」
+      dom.calibCountdown.textContent = secondsRemaining;
+      if (secondsRemaining === 3) {
+        lockBaselineFromSamples();
+        speakText("請確認位置", true);
+      }
+      if (dom.calibStageBadge) {
+        dom.calibStageBadge.textContent = "步驟 2/2：位置確認階段 (後 3 秒)";
+        dom.calibStageBadge.className = "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#FF7043]/20 text-[#d84315] border border-[#FF7043]/40";
+      }
+      if (dom.calibTitle) dom.calibTitle.textContent = "請確認位置";
+      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "基準已鎖定，請保持面部及雙肩對齊於綠色參考框內...";
     } else {
-      clearInterval(timer);
-      finalizeCalibration();
+      // 10 秒結束：不自動開始訓練，進入確認畫面
+      clearInterval(AppState.calibTimerId);
+      AppState.calibTimerId = null;
+      showCalibrationConfirmation();
     }
   }, 1000);
 
   function calibFrameLoop() {
     if (AppState.currentState !== STATES.CALIBRATING) return;
 
+    const isCollectingPhase = !AppState.isCalibConfirming && (AppState.calibration.elapsedCalibSec < 7);
+
     if (AppState.isDemoMode) {
-      AppState.calibration.sumDEye += 0.18;
-      AppState.calibration.sumLar += 0.04;
-      AppState.calibration.sumYShoulder += 0.72;
-      AppState.calibration.samplesCount++;
+      if (isCollectingPhase) {
+        AppState.calibration.sumDEye += 0.20;
+        AppState.calibration.sumLar += 0.04;
+        AppState.calibration.sumYShoulder += 0.72;
+        AppState.calibration.samplesCount++;
+      }
+      renderCalibrationCanvas(generateSimulatedDetections(performance.now()));
     } else if (dom.calibVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
       try {
         const ts = getNextTimestamp();
@@ -1379,15 +1812,18 @@ async function runCalibrationSequence() {
           const face = faceResult.faceLandmarks[0];
           const pose = poseResult.landmarks[0];
 
-          const dEye = calculateDEye(face);
-          const lar = calculateLAR(face);
-          const yShoulder = (pose[11].y + pose[12].y) / 2;
+          if (isCollectingPhase) {
+            const dEye = calculateDEye(face);
+            const lar = calculateLAR(face);
+            const yShoulder = (pose[11].y + pose[12].y) / 2;
 
-          AppState.calibration.sumDEye += dEye;
-          AppState.calibration.sumLar += lar;
-          AppState.calibration.sumYShoulder += yShoulder;
-          AppState.calibration.samplesCount++;
+            AppState.calibration.sumDEye += dEye;
+            AppState.calibration.sumLar += lar;
+            AppState.calibration.sumYShoulder += yShoulder;
+            AppState.calibration.samplesCount++;
+          }
         }
+        renderCalibrationCanvas({ faceResult, poseResult });
       } catch (e) {
         console.warn("校準幀運算略過:", e);
       }
@@ -1397,7 +1833,7 @@ async function runCalibrationSequence() {
   requestAnimationFrame(calibFrameLoop);
 }
 
-function finalizeCalibration() {
+function lockBaselineFromSamples() {
   const c = AppState.calibration;
   if (c.samplesCount > 5) {
     c.dEyeBase = c.sumDEye / c.samplesCount;
@@ -1408,13 +1844,81 @@ function finalizeCalibration() {
     c.larRest = 0.04;
     c.yShoulderBase = 0.72;
   }
+}
 
-  speakText("基準坐姿已記錄，現在開始訓練", true);
-  setTimeout(() => {
-    if (AppState.currentState === STATES.CALIBRATING) {
-      switchViewState(STATES.TRAINING);
+function showCalibrationConfirmation() {
+  lockBaselineFromSamples();
+  AppState.isCalibConfirming = true;
+
+  if (dom.calibCountdownOverlay) dom.calibCountdownOverlay.classList.add('hidden');
+  if (dom.calibConfirmOverlay) dom.calibConfirmOverlay.classList.remove('hidden');
+
+  const c = AppState.calibration;
+  if (dom.calibSummaryMetrics) {
+    dom.calibSummaryMetrics.textContent = `已收集 ${c.samplesCount} 幀基準 · D_eye: ${c.dEyeBase.toFixed(2)} · 肩高基準: ${c.yShoulderBase.toFixed(2)} · 閉口 LAR: ${c.larRest.toFixed(2)}`;
+  }
+
+  speakText("請確認位置，準備好可以點擊確認並開始訓練", true);
+}
+
+function renderCalibrationCanvas(detections) {
+  if (!dom.calibCanvas) return;
+  const canvas = dom.calibCanvas;
+  const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 640, height: 360 };
+  if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+    canvas.width = Math.floor(rect.width) || 640;
+    canvas.height = Math.floor(rect.height) || 360;
+  }
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  if (AppState.isDemoMode) {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  if (!detections) return;
+  const { faceResult, poseResult } = detections;
+
+  if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
+    const pose = poseResult.landmarks[0];
+    const p11 = { x: pose[11].x * w, y: pose[11].y * h };
+    const p12 = { x: pose[12].x * w, y: pose[12].y * h };
+    ctx.save();
+    ctx.strokeStyle = '#4DB6AC';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(p11.x, p11.y);
+    ctx.lineTo(p12.x, p12.y);
+    ctx.stroke();
+    ctx.fillStyle = '#4DB6AC';
+    ctx.beginPath();
+    ctx.arc(p11.x, p11.y, 6, 0, Math.PI * 2);
+    ctx.arc(p12.x, p12.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (faceResult && faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
+    const face = faceResult.faceLandmarks[0];
+    const lipPoints = [78, 13, 308, 14].map(idx => ({
+      x: face[idx].x * w,
+      y: face[idx].y * h
+    }));
+    ctx.save();
+    ctx.strokeStyle = '#4DB6AC';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
+    for (let i = 1; i < lipPoints.length; i++) {
+      ctx.lineTo(lipPoints[i].x, lipPoints[i].y);
     }
-  }, 350);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -1426,13 +1930,18 @@ async function runTrainingSequence() {
     await dom.trainVideo.play().catch(e => console.log(e));
   }
 
-  AppState.training.startTime = performance.now();
-  AppState.training.phaseStartTime = performance.now();
+  const now = performance.now();
+  const targetRR = 60 / (AppState.inhaleTarget + AppState.exhaleTarget);
+
+  AppState.training.startTime = now;
+  AppState.training.phaseStartTime = now;
+  AppState.training.cycleStartTime = now;
   AppState.training.currentPhase = PHASES.INHALE;
   AppState.training.cycleIndex = 1;
   AppState.training.cyclesHistory = [];
   AppState.training.tInActual = 0;
   AppState.training.tExActual = 0;
+  AppState.training.avgRR = targetRR;
   AppState.training.totalInhaleFrames = 0;
   AppState.training.validInhaleFrames = 0;
   AppState.training.totalExhaleFrames = 0;
@@ -1444,23 +1953,27 @@ async function runTrainingSequence() {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
+  applyPrivacyModeStyles();
+  applyDisplayModeStyles();
   syncCanvasDimensions();
   window.addEventListener('resize', syncCanvasDimensions);
 
-  applyPrivacyModeStyles();
   triggerPhaseSwitch(PHASES.INHALE);
+  updateLiveRespiratoryRate(now);
 
   requestAnimationFrame(trainingInferenceLoop);
 }
 
 function syncCanvasDimensions() {
-  const container = document.getElementById('vision-container');
-  if (container && dom.trainCanvas) {
-    dom.trainCanvas.width = container.clientWidth || 640;
-    dom.trainCanvas.height = container.clientHeight || 480;
+  if (dom.visionContainer && dom.trainCanvas && AppState.privacyMode !== 'minimalist') {
+    dom.trainCanvas.width = dom.visionContainer.clientWidth || 640;
+    dom.trainCanvas.height = dom.visionContainer.clientHeight || 480;
   }
 }
 
+/**
+ * 切換視覺私隱模式 + Pacer 模式圓球與文字提示完全居中 (Requirement 6)
+ */
 function applyPrivacyModeStyles() {
   const mode = AppState.privacyMode;
   if (dom.selectPrivacy && dom.selectPrivacy.value !== mode) {
@@ -1468,29 +1981,109 @@ function applyPrivacyModeStyles() {
   }
 
   // 更新訓練畫面右上角模式按鈕高亮
-  const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-teal-500 text-slate-950 shadow transition cursor-pointer";
-  const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer";
+  const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-sm transition cursor-pointer";
+  const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
   if (dom.btnModeMirror) dom.btnModeMirror.className = mode === 'mirror' ? activeCls : inactiveCls;
   if (dom.btnModeMesh) dom.btnModeMesh.className = mode === 'privacy_mesh' ? activeCls : inactiveCls;
   if (dom.btnModeMinimal) dom.btnModeMinimal.className = mode === 'minimalist' ? activeCls : inactiveCls;
 
-  if (mode === 'privacy_mesh') {
-    dom.trainVideo.style.opacity = '0';
-    dom.trainCanvas.style.opacity = '1';
-    dom.trainCanvas.classList.add('privacy-mesh-canvas');
-    dom.badgeMeshMode.textContent = AppState.isDemoMode ? "🧪 免鏡頭模擬骨架模式" : "🔒 去識別化黑底骨架模式";
-    dom.badgeMeshMode.classList.remove('hidden');
-  } else if (mode === 'minimalist') {
-    dom.trainVideo.style.opacity = '0';
-    dom.trainCanvas.style.opacity = '0';
-    dom.badgeMeshMode.textContent = "🧘 純呼吸節奏球專注模式";
-    dom.badgeMeshMode.classList.remove('hidden');
+  if (mode === 'minimalist') {
+    // Requirement 6: Pacer 模式時隱藏左側空白視訊欄，讓圓球與文字提示在畫面正中央居中
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-px h-px opacity-0 pointer-events-none fixed -left-[9999px] overflow-hidden";
+    }
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full flex-1 h-full bg-[#f5fafd] flex flex-col items-center justify-between p-4 md:p-8 overflow-y-auto";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-4 relative min-h-[240px] w-full max-w-xl mx-auto text-center";
+    }
+    if (dom.biofeedbackCardsGrid) {
+      dom.biofeedbackCardsGrid.className = "w-full max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-3";
+    }
   } else {
-    dom.trainVideo.style.opacity = AppState.isDemoMode ? '0' : '1';
-    dom.trainCanvas.style.opacity = '1';
-    dom.trainCanvas.classList.remove('privacy-mesh-canvas');
-    dom.badgeMeshMode.textContent = "📷 實時鏡像 + AR 輔助框";
-    dom.badgeMeshMode.classList.remove('hidden');
+    // 雙欄模式 (Mirror / Privacy Mesh)：左側 60% 視訊/骨架，右側 40% 引導欄
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0";
+    }
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center";
+    }
+    if (dom.biofeedbackCardsGrid) {
+      dom.biofeedbackCardsGrid.className = "w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5";
+    }
+
+    if (mode === 'privacy_mesh') {
+      dom.trainVideo.style.opacity = '0';
+      dom.trainCanvas.style.opacity = '1';
+      dom.trainCanvas.classList.add('privacy-mesh-canvas');
+      dom.badgeMeshMode.textContent = AppState.isDemoMode ? "🧪 免鏡頭模擬骨架模式" : "🔒 去識別化黑底骨架模式";
+      dom.badgeMeshMode.classList.remove('hidden');
+    } else {
+      dom.trainVideo.style.opacity = AppState.isDemoMode ? '0' : '1';
+      dom.trainCanvas.style.opacity = '1';
+      dom.trainCanvas.classList.remove('privacy-mesh-canvas');
+      dom.badgeMeshMode.textContent = "📷 實時鏡像 + AR 輔助框";
+      dom.badgeMeshMode.classList.remove('hidden');
+    }
+    setTimeout(syncCanvasDimensions, 50);
+  }
+}
+
+/**
+ * 切換氣球模式 vs 真人模式 (Requirement 3: 1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+ */
+function applyDisplayModeStyles() {
+  const isHuman = AppState.displayMode === 'human';
+  const gender = AppState.humanGender;
+
+  // 更新 STATE_IDLE 設定按鈕樣式
+  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+
+  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = !isHuman ? idleActive : idleInactive;
+  if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
+  if (dom.wrapperHumanGender) {
+    dom.wrapperHumanGender.classList.toggle('hidden', !isHuman);
+  }
+  if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? idleActive : idleInactive;
+  if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? idleActive : idleInactive;
+
+  // 更新 STATE_TRAINING 頂部快速切換按鈕樣式
+  const trainActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const trainInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
+  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = !isHuman ? trainActive : trainInactive;
+  if (dom.btnTrainMale) dom.btnTrainMale.className = (isHuman && gender === 'male') ? trainActive : trainInactive;
+  if (dom.btnTrainFemale) dom.btnTrainFemale.className = (isHuman && gender === 'female') ? trainActive : trainInactive;
+
+  // 更新圖片路徑 (1.jpg/2.jpg 或 3.jpg/4.jpg)
+  const imgPair = HUMAN_IMAGES[gender] || HUMAN_IMAGES.male;
+  if (dom.imgHumanInhale && dom.imgHumanInhale.getAttribute('src') !== imgPair.inhale) {
+    dom.imgHumanInhale.src = imgPair.inhale;
+  }
+  if (dom.imgHumanExhale && dom.imgHumanExhale.getAttribute('src') !== imgPair.exhale) {
+    dom.imgHumanExhale.src = imgPair.exhale;
+  }
+
+  // 切換氣球或真人框顯示
+  if (dom.pacerOuterRing) {
+    dom.pacerOuterRing.classList.toggle('hidden', isHuman);
+  }
+  if (dom.humanDemoWrapper) {
+    dom.humanDemoWrapper.classList.toggle('hidden', !isHuman);
+  }
+
+  // 同步當前吸呼階段的圖片透明度
+  const isInhale = AppState.training.currentPhase === PHASES.INHALE;
+  if (dom.imgHumanInhale && dom.imgHumanExhale) {
+    dom.imgHumanInhale.classList.toggle('active-img', isInhale);
+    dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
+  }
+  if (dom.humanDemoBox) {
+    dom.humanDemoBox.classList.toggle('exhale-border', !isInhale);
   }
 }
 
@@ -1514,7 +2107,7 @@ function trainingInferenceLoop() {
   dom.valCycleCount.textContent = train.cycleIndex;
 
   if (remainingTotal <= 0) {
-    finalizeCurrentCycle();
+    finalizeCurrentCycle(now);
     switchViewState(STATES.SUMMARY);
     return;
   }
@@ -1543,17 +2136,70 @@ function trainingInferenceLoop() {
   // 2. 呼吸節奏狀態機推進
   advanceBreathingPacer(now);
 
-  // 3. 繪製視覺 Canvas 覆蓋層
+  // 3. 即時更新平均呼吸頻率 (Requirement 7)
+  updateLiveRespiratoryRate(now);
+
+  // 4. 繪製視覺 Canvas 覆蓋層
   renderTrainingCanvas(AppState.lastFaceResult, AppState.lastPoseResult);
 
-  // 4. 更新調試面板讀數
+  // 5. 更新調試面板讀數
   updateDebugReadouts();
 
   requestAnimationFrame(trainingInferenceLoop);
 }
 
 // ----------------------------------------------------------------------------
-// 逐幀特徵點運算與臨床規則評估 (Frame Processing & Clinical Rules)
+// 實時平均呼吸頻率計算與回饋 (Requirement 7: Average Respiratory Rate)
+// ----------------------------------------------------------------------------
+function updateLiveRespiratoryRate(now) {
+  const train = AppState.training;
+  const targetCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
+  const targetRR = 60 / targetCycleSec;
+
+  const elapsedSec = Math.max(0.1, (now - train.startTime) / 1000);
+  const currentCycleElapsed = Math.max(0, (now - train.cycleStartTime) / 1000);
+  const currentCycleProgress = Math.min(0.99, currentCycleElapsed / targetCycleSec);
+
+  // 結合已完成週期與當前週期進度計算即時平均呼吸頻率 (breaths/min)
+  let liveAvgRR = targetRR;
+  if (train.cyclesHistory.length > 0) {
+    const totalCompletedDuration = train.cyclesHistory.reduce((acc, c) => acc + (c.cycleDuration || targetCycleSec), 0);
+    const meanCompletedRR = (train.cyclesHistory.length / Math.max(1, totalCompletedDuration)) * 60;
+    const sessionRR = ((train.cyclesHistory.length + currentCycleProgress) / elapsedSec) * 60;
+    liveAvgRR = (meanCompletedRR * 0.5) + (sessionRR * 0.5);
+  } else if (elapsedSec >= 1.5) {
+    liveAvgRR = ((currentCycleProgress) / elapsedSec) * 60;
+  }
+
+  train.avgRR = liveAvgRR;
+  const rrFormatted = liveAvgRR.toFixed(1);
+
+  if (dom.valLiveRr) {
+    dom.valLiveRr.textContent = rrFormatted;
+  }
+  if (dom.badgeRrActual) {
+    dom.badgeRrActual.textContent = `${rrFormatted} 次/分`;
+  }
+  if (dom.textRrState && dom.cardRr) {
+    const diff = Math.abs(liveAvgRR - targetRR);
+    if (liveAvgRR > 20) {
+      dom.textRrState.textContent = `${rrFormatted} BPM (呼吸偏快，請放慢)`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-amber-600";
+      dom.cardRr.className = "p-3 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between transition-all shadow-sm";
+    } else if (diff <= 2.5) {
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)} 達標)`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardRr.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
+    } else {
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)})`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-teal-700";
+      dom.cardRr.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 逐幀特徵點運算與臨床規則評估 (Frame Processing & Clinical Rules — 嚴格保留)
 // ----------------------------------------------------------------------------
 function processFrameDetections(faceResult, poseResult) {
   const m = AppState.currentMetrics;
@@ -1634,7 +2280,7 @@ function processFrameDetections(faceResult, poseResult) {
 }
 
 // ----------------------------------------------------------------------------
-// 右側節奏球與週期狀態機推進 (Pacer Timing & Switching)
+// 節奏球 / 真人示範與週期狀態機推進 (Pacer Timing & Switching)
 // ----------------------------------------------------------------------------
 function advanceBreathingPacer(now) {
   const train = AppState.training;
@@ -1646,11 +2292,13 @@ function advanceBreathingPacer(now) {
     
     dom.pacerActionText.textContent = "用鼻吸氣";
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
+    if (dom.humanActionText) dom.humanActionText.textContent = "用鼻吸氣";
+    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "閉口由鼻吸氣 · 雙肩保持下沉";
     
-    const scale = 1.0 + (progress * 0.62);
+    const scale = 0.85 + (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
-    dom.pacerBall.className = "w-24 h-24 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 shadow-2xl shadow-emerald-500/50 flex flex-col items-center justify-center text-slate-950 font-bold transition-transform duration-100";
+    dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
 
     if (phaseElapsed >= AppState.inhaleTarget) {
       triggerPhaseSwitch(PHASES.EXHALE);
@@ -1661,19 +2309,22 @@ function advanceBreathingPacer(now) {
 
     dom.pacerActionText.textContent = "噘唇吹氣";
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
+    if (dom.humanActionText) dom.humanActionText.textContent = "噘唇吹氣";
+    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "嘴唇噘起如吹蠟燭 · 均勻慢呼";
 
-    const scale = 1.62 - (progress * 0.77);
+    const scale = 1.30 - (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
-    dom.pacerBall.className = "w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 shadow-2xl shadow-cyan-500/50 flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
+    dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-exhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
 
     if (phaseElapsed > (AppState.exhaleTarget * 0.5) && train.tExActual < (phaseElapsed * 0.5)) {
       updateFeedbackQueue(4, "呼氣太快完喇，試下跟住圓圈慢慢吹長啲氣");
     }
 
     if (phaseElapsed >= AppState.exhaleTarget) {
-      finalizeCurrentCycle();
+      finalizeCurrentCycle(now);
       train.cycleIndex++;
+      train.cycleStartTime = now;
       triggerPhaseSwitch(PHASES.INHALE);
     }
   }
@@ -1684,28 +2335,42 @@ function triggerPhaseSwitch(newPhase) {
   train.currentPhase = newPhase;
   train.phaseStartTime = performance.now();
 
-  if (newPhase === PHASES.INHALE) {
+  const isInhale = newPhase === PHASES.INHALE;
+  if (dom.imgHumanInhale && dom.imgHumanExhale) {
+    dom.imgHumanInhale.classList.toggle('active-img', isInhale);
+    dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
+  }
+  if (dom.humanDemoBox) {
+    dom.humanDemoBox.classList.toggle('exhale-border', !isInhale);
+  }
+
+  if (isInhale) {
     dom.pillPhase.textContent = "吸氣階段 (閉口鼻吸)";
-    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-emerald-400 border border-emerald-500/40 shadow-lg backdrop-blur";
+    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#4DB6AC] text-white shadow-sm";
     speakText("吸氣", true);
   } else {
     dom.pillPhase.textContent = "呼氣階段 (噘唇吹氣)";
-    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-cyan-400 border border-cyan-500/40 shadow-lg backdrop-blur";
+    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#FF7043] text-white shadow-sm";
     speakText("慢慢噘唇呼氣", true);
   }
 }
 
-function finalizeCurrentCycle() {
+function finalizeCurrentCycle(now = performance.now()) {
   const train = AppState.training;
   const safeTin = Math.max(train.tInActual, 0.5);
   const achievedIeRatio = train.tExActual / safeTin;
+  const cycleDuration = Math.max(1.0, (now - (train.cycleStartTime || train.phaseStartTime)) / 1000);
+  const cycleRR = 60 / cycleDuration;
 
   train.cyclesHistory.push({
     cycle: train.cycleIndex,
     tInActual: train.tInActual,
     tExActual: train.tExActual,
     achievedIe: achievedIeRatio,
-    targetIe: AppState.exhaleTarget / AppState.inhaleTarget
+    targetIe: AppState.exhaleTarget / AppState.inhaleTarget,
+    cycleDuration: cycleDuration,
+    cycleRR: cycleRR,
+    avgRR: train.avgRR
   });
 
   dom.badgeIeActual.textContent = `1 : ${achievedIeRatio.toFixed(1)}`;
@@ -1716,7 +2381,7 @@ function finalizeCurrentCycle() {
 }
 
 // ----------------------------------------------------------------------------
-// 右側 3 張實時指示卡渲染 (Indicator Cards)
+// 實時指示卡渲染 (Indicator Cards — 輕柔高對比配色)
 // ----------------------------------------------------------------------------
 function renderIndicatorCards(isShoulderRelaxed) {
   const m = AppState.currentMetrics;
@@ -1726,37 +2391,37 @@ function renderIndicatorCards(isShoulderRelaxed) {
   if (train.currentPhase === PHASES.INHALE) {
     if (m.lar <= THRESHOLDS.larInhaleMax) {
       dom.textPlbState.textContent = "閉口鼻吸 (達標)";
-      dom.textPlbState.className = "text-sm font-bold text-emerald-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
       dom.textPlbState.textContent = "吸氣張口 (需閉口)";
-      dom.textPlbState.className = "text-sm font-bold text-rose-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-rose-600";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm";
     }
   } else {
     const isPlb = (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax) &&
                   (m.mouthPucker >= THRESHOLDS.mouthPuckerMin || m.mouthFunnel >= THRESHOLDS.mouthFunnelMin);
     if (isPlb) {
       dom.textPlbState.textContent = "噘唇吹氣 (達標)";
-      dom.textPlbState.className = "text-sm font-bold text-emerald-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
       dom.textPlbState.textContent = "未形成噘唇吹氣";
-      dom.textPlbState.className = "text-sm font-bold text-amber-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-amber-600";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between transition-all shadow-sm";
     }
   }
 
   dom.badgeShoulderDelta.textContent = `ΔY: ${m.deltaYShoulder >= 0 ? '+' : ''}${m.deltaYShoulder.toFixed(2)}`;
   if (isShoulderRelaxed) {
     dom.textShoulderState.textContent = "放鬆沉肩 (正常)";
-    dom.textShoulderState.className = "text-sm font-bold text-emerald-400";
-    dom.cardShoulder.className = "p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-all";
+    dom.textShoulderState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+    dom.cardShoulder.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
     dom.cardShoulder.classList.remove('shoulder-alert-active');
   } else {
     dom.textShoulderState.textContent = "偵測到聳肩代償";
-    dom.textShoulderState.className = "text-sm font-bold text-rose-400";
-    dom.cardShoulder.className = "p-3 md:p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500 flex items-center justify-between shoulder-alert-active transition-all";
+    dom.textShoulderState.className = "text-xs md:text-sm font-bold text-rose-600";
+    dom.cardShoulder.className = "p-3 rounded-2xl bg-rose-50 border border-rose-500 flex items-center justify-between shoulder-alert-active transition-all shadow-sm";
   }
 }
 
@@ -1765,6 +2430,7 @@ function renderIndicatorCards(isShoulderRelaxed) {
 // ----------------------------------------------------------------------------
 function renderTrainingCanvas(faceResults, poseResults) {
   const canvas = dom.trainCanvas;
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
@@ -1791,7 +2457,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
     if (AppState.calibration.yShoulderBase > 0) {
       const yBasePx = AppState.calibration.yShoulderBase * h;
       ctx.save();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 6]);
       ctx.beginPath();
@@ -1807,7 +2473,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
       ctx.strokeStyle = '#ef4444';
       ctx.setLineDash([8, 6]);
     } else {
-      ctx.strokeStyle = '#10b981';
+      ctx.strokeStyle = '#4DB6AC';
       ctx.setLineDash([]);
     }
 
@@ -1829,7 +2495,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
     const face = faceResults.faceLandmarks[0];
 
     if (mode === 'privacy_mesh' || AppState.isDemoMode) {
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = '#4DB6AC';
       const ovalIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
       ovalIndices.forEach(idx => {
         if (face[idx]) {
@@ -1839,7 +2505,6 @@ function renderTrainingCanvas(faceResults, poseResults) {
         }
       });
 
-      // 雙眼外眼角特徵點 (33, 263)
       if (face[33] && face[263]) {
         ctx.fillStyle = '#94a3b8';
         ctx.beginPath();
@@ -1859,8 +2524,8 @@ function renderTrainingCanvas(faceResults, poseResults) {
     const isGoodPlb = AppState.training.currentPhase === PHASES.INHALE
       ? (m.lar <= THRESHOLDS.larInhaleMax)
       : (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax);
-    ctx.strokeStyle = isGoodPlb ? '#10b981' : '#f59e0b';
-    ctx.fillStyle = isGoodPlb ? 'rgba(16, 185, 129, 0.28)' : 'rgba(245, 158, 11, 0.28)';
+    ctx.strokeStyle = isGoodPlb ? '#4DB6AC' : '#FF7043';
+    ctx.fillStyle = isGoodPlb ? 'rgba(77, 182, 172, 0.28)' : 'rgba(255, 112, 67, 0.28)';
 
     ctx.beginPath();
     ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
@@ -1882,7 +2547,9 @@ function renderSummaryReport() {
   const totalSecs = Math.max(1, Math.round(train.elapsedSeconds));
   const completedCycles = train.cyclesHistory.length;
 
-  const meanRR = ((completedCycles / totalSecs) * 60).toFixed(1);
+  const meanRR = completedCycles > 0
+    ? ((completedCycles / totalSecs) * 60).toFixed(1)
+    : train.avgRR.toFixed(1);
 
   let sumIe = 0;
   train.cyclesHistory.forEach(c => sumIe += c.achievedIe);
@@ -1913,7 +2580,7 @@ function renderSummaryReport() {
   dom.sumShoulderAcc.textContent = `${shoulderAcc}%`;
   dom.sumGrade.textContent = gradeText;
 
-  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，評級為${gradeText}`);
+  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，平均呼吸頻率為每分鐘${meanRR}次，評級為${gradeText}`);
   loadAndRenderLocalHistory();
 }
 
@@ -1922,24 +2589,28 @@ function exportDeidentifiedCSV() {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const timeStr = now.toTimeString().slice(0, 8);
+  const meanRR = dom.sumRr ? dom.sumRr.textContent : train.avgRR.toFixed(1);
 
-  let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "=== BreathGuide — 實時呼吸視覺生物反饋系統 匿名臨床數據報表 ===\n";
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+  csvContent += "=== 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;
   csvContent += `完成循環總數,${train.cyclesHistory.length}\n`;
+  csvContent += `平均呼吸頻率(次/分),${meanRR}\n`;
   csvContent += `設定目標吸呼比,1:${(AppState.exhaleTarget / AppState.inhaleTarget).toFixed(1)}\n\n`;
 
-  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比\n";
+  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比,單次週期呼吸頻率(次/分),累計平均呼吸頻率(次/分)\n";
   train.cyclesHistory.forEach(c => {
-    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)}\n`;
+    const cRR = c.cycleRR ? c.cycleRR.toFixed(1) : (60 / (AppState.inhaleTarget + AppState.exhaleTarget)).toFixed(1);
+    const aRR = c.avgRR ? c.avgRR.toFixed(1) : meanRR;
+    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)},${cRR},${aRR}\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `BreathGuide_Report_${dateStr}.csv`);
+  link.setAttribute("download", `SootheBreath_Report_${dateStr}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1948,13 +2619,19 @@ function exportDeidentifiedCSV() {
 
 function saveSessionToLocalStorage() {
   const train = AppState.training;
-  const historyKey = 'breathguide_history_v3';
-  const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
+  const historyKey = 'soothebreath_history_v4';
+  let existing = [];
+  try {
+    existing = JSON.parse(localStorage.getItem(historyKey) || localStorage.getItem('breathguide_history_v3') || '[]');
+  } catch (e) {
+    existing = [];
+  }
 
   const record = {
     date: new Date().toLocaleString('zh-HK'),
     duration: Math.round(train.elapsedSeconds),
     cycles: train.cyclesHistory.length,
+    meanRR: dom.sumRr ? dom.sumRr.textContent : train.avgRR.toFixed(1),
     plbAcc: dom.sumPlbAcc.textContent,
     shoulderAcc: dom.sumShoulderAcc.textContent,
     grade: dom.sumGrade.textContent
@@ -1962,31 +2639,40 @@ function saveSessionToLocalStorage() {
 
   existing.unshift(record);
   const trimmed = existing.slice(0, 10);
-  localStorage.setItem(historyKey, JSON.stringify(trimmed));
+  try {
+    localStorage.setItem(historyKey, JSON.stringify(trimmed));
+  } catch (e) {
+    console.warn("localStorage 寫入受限:", e);
+  }
   loadAndRenderLocalHistory();
   showToast("✅ 訓練紀錄已成功儲存至本機瀏覽器");
 }
 
 function loadAndRenderLocalHistory() {
   if (!dom.listHistory) return;
-  const historyKey = 'breathguide_history_v3';
-  const records = JSON.parse(localStorage.getItem(historyKey) || '[]');
+  let records = [];
+  try {
+    records = JSON.parse(localStorage.getItem('soothebreath_history_v4') || localStorage.getItem('breathguide_history_v3') || '[]');
+  } catch (e) {
+    records = [];
+  }
   
   if (records.length === 0) {
-    dom.listHistory.innerHTML = `<div class="text-slate-500 py-2 text-center">暫無本地歷史紀錄（完成訓練後可點擊上方儲存）</div>`;
+    dom.listHistory.innerHTML = `<div class="text-slate-400 py-2 text-center">暫無本地歷史紀錄（完成訓練後可點擊上方儲存）</div>`;
     return;
   }
 
   dom.listHistory.innerHTML = records.map((r, i) => `
-    <div class="flex justify-between items-center bg-slate-950/70 px-3 py-2 rounded-xl border border-slate-800/80">
+    <div class="flex flex-wrap justify-between items-center bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/80 gap-2">
       <div>
-        <span class="text-emerald-400 font-bold">#${records.length - i}</span>
-        <span class="text-slate-400 ml-2">${r.date}</span>
+        <span class="text-[#2E7D32] font-bold">#${records.length - i}</span>
+        <span class="text-slate-500 ml-2">${r.date}</span>
       </div>
-      <div class="space-x-3 text-right">
-        <span class="text-slate-300">${r.cycles} 週期</span>
-        <span class="text-teal-400">噘唇達標: ${r.plbAcc}</span>
-        <span class="text-emerald-300 font-bold">${r.grade}</span>
+      <div class="space-x-2.5 text-right">
+        <span class="text-slate-700 font-medium">${r.cycles} 週期</span>
+        ${r.meanRR ? `<span class="text-sky-700">RR: ${r.meanRR} 次/分</span>` : ''}
+        <span class="text-teal-700">噘唇: ${r.plbAcc}</span>
+        <span class="text-[#2E7D32] font-bold">${r.grade}</span>
       </div>
     </div>
   `).join('');
@@ -2004,6 +2690,7 @@ function updateDebugReadouts() {
   dom.dbgShoulder.textContent = m.deltaYShoulder.toFixed(3);
   dom.dbgDeye.textContent = m.dEye.toFixed(3);
   dom.dbgTilt.textContent = m.shoulderTilt.toFixed(3);
+  if (dom.dbgRr) dom.dbgRr.textContent = AppState.training.avgRR.toFixed(1) + " BPM";
 }
 
 function openDebugDrawer() {
@@ -2016,32 +2703,38 @@ function closeDebugDrawer() {
   if (dom.debugBackdrop) dom.debugBackdrop.classList.add('hidden');
 }
 
-function highlightActiveIeButton() {
+function updatePacingCalculationsUI() {
   const ratio = AppState.exhaleTarget / AppState.inhaleTarget;
+  const totalCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
+  const targetBpm = 60 / totalCycleSec;
+
   document.querySelectorAll('.btn-ie-quick').forEach(btn => {
     const btnIn = parseFloat(btn.dataset.in);
     const btnEx = parseFloat(btn.dataset.ex);
     const isMatch = Math.abs(AppState.inhaleTarget - btnIn) < 0.05 && Math.abs(AppState.exhaleTarget - btnEx) < 0.05;
     if (isMatch) {
-      btn.className = "btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm transition cursor-pointer";
+      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
     } else {
-      btn.className = "btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer";
+      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
     }
   });
-  dom.labelIePreset.textContent = `目標 1 : ${ratio.toFixed(1)}`;
+
+  if (dom.labelIePreset) dom.labelIePreset.textContent = `目標 1 : ${ratio.toFixed(1)}`;
+  if (dom.valTargetBpm) dom.valTargetBpm.textContent = `${targetBpm.toFixed(1)} BPM (次/分)`;
+  if (dom.valCycleTotal) dom.valCycleTotal.textContent = `單次循環總長: ${totalCycleSec.toFixed(1)} 秒 (吸 ${AppState.inhaleTarget.toFixed(1)}s / 呼 ${AppState.exhaleTarget.toFixed(1)}s)`;
 }
 
 function setupEventListeners() {
   dom.inputInhale.addEventListener('input', (e) => {
     AppState.inhaleTarget = parseFloat(e.target.value);
     dom.valInhale.textContent = `${AppState.inhaleTarget.toFixed(1)} 秒`;
-    highlightActiveIeButton();
+    updatePacingCalculationsUI();
   });
 
   dom.inputExhale.addEventListener('input', (e) => {
     AppState.exhaleTarget = parseFloat(e.target.value);
     dom.valExhale.textContent = `${AppState.exhaleTarget.toFixed(1)} 秒`;
-    highlightActiveIeButton();
+    updatePacingCalculationsUI();
   });
 
   document.querySelectorAll('.btn-ie-quick').forEach(btn => {
@@ -2054,11 +2747,12 @@ function setupEventListeners() {
       dom.inputExhale.value = exVal;
       dom.valInhale.textContent = `${inVal.toFixed(1)} 秒`;
       dom.valExhale.textContent = `${exVal.toFixed(1)} 秒`;
-      highlightActiveIeButton();
-      showToast(`⏱️ 已切換吸呼比為 1 : ${(exVal / inVal).toFixed(0)}（吸氣 ${inVal}s / 呼氣 ${exVal}s）`);
+      updatePacingCalculationsUI();
+      showToast(`⏱️ 已切換吸呼比為 1 : ${(exVal / inVal).toFixed(0)}（目標頻率 ${(60 / (inVal + exVal)).toFixed(1)} BPM）`);
     });
   });
 
+  // 視覺私隱模式選擇
   dom.selectPrivacy.addEventListener('change', (e) => {
     AppState.privacyMode = e.target.value;
     applyPrivacyModeStyles();
@@ -2083,22 +2777,82 @@ function setupEventListeners() {
     });
   }
 
+  // 真人模式與性別切換 (STATE_IDLE 與 STATE_TRAINING)
+  if (dom.btnPacerBalloon) {
+    dom.btnPacerBalloon.addEventListener('click', () => {
+      AppState.displayMode = 'balloon';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnPacerHuman) {
+    dom.btnPacerHuman.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnGenderMale) {
+    dom.btnGenderMale.addEventListener('click', () => {
+      AppState.humanGender = 'male';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnGenderFemale) {
+    dom.btnGenderFemale.addEventListener('click', () => {
+      AppState.humanGender = 'female';
+      applyDisplayModeStyles();
+    });
+  }
+
+  // 訓練中快速切換氣球 / 男示範 / 女示範
+  if (dom.btnTrainBalloon) {
+    dom.btnTrainBalloon.addEventListener('click', () => {
+      AppState.displayMode = 'balloon';
+      applyDisplayModeStyles();
+      showToast("🎈 已切換至氣球節奏球模式");
+    });
+  }
+  if (dom.btnTrainMale) {
+    dom.btnTrainMale.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      AppState.humanGender = 'male';
+      applyDisplayModeStyles();
+      showToast("👨 已切換至真人示範（男性：1=男吸 / 2=男呼）");
+    });
+  }
+  if (dom.btnTrainFemale) {
+    dom.btnTrainFemale.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      AppState.humanGender = 'female';
+      applyDisplayModeStyles();
+      showToast("👩 已切換至真人示範（女性：3=女吸 / 4=女呼）");
+    });
+  }
+
   dom.selectDuration.addEventListener('change', (e) => {
     AppState.totalDuration = parseInt(e.target.value, 10);
   });
 
   dom.toggleVoice.addEventListener('change', (e) => {
     AppState.voiceEnabled = e.target.checked;
+    syncVoiceUI();
     showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
   });
 
-  // 啟動真實相機訓練
+  if (dom.btnHeaderVoice) {
+    dom.btnHeaderVoice.addEventListener('click', () => {
+      AppState.voiceEnabled = !AppState.voiceEnabled;
+      syncVoiceUI();
+      showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
+    });
+  }
+
+  // 啟動真實相機訓練 -> 進入 10 秒校準
   dom.btnStart.addEventListener('click', () => {
     AppState.isDemoMode = false;
     switchViewState(STATES.CALIBRATING);
   });
 
-  // 啟動免鏡頭模擬預覽訓練
+  // 啟動免鏡頭模擬預覽訓練 -> 進入 10 秒校準
   if (dom.btnStartDemo) {
     dom.btnStartDemo.addEventListener('click', () => {
       AppState.isDemoMode = true;
@@ -2107,9 +2861,37 @@ function setupEventListeners() {
     });
   }
 
+  // 校準畫面取消返回設定
   if (dom.btnCancelCalib) {
     dom.btnCancelCalib.addEventListener('click', () => {
       switchViewState(STATES.IDLE);
+    });
+  }
+
+  // Requirement 4: 10秒校準結束後的確認畫面三顆按鈕
+  if (dom.btnConfirmStart) {
+    dom.btnConfirmStart.addEventListener('click', () => {
+      speakText("現在開始呼吸訓練", true);
+      switchViewState(STATES.TRAINING);
+    });
+  }
+  if (dom.btnRecalibrate) {
+    dom.btnRecalibrate.addEventListener('click', () => {
+      showToast("🔄 重新進行 10 秒基準校準");
+      runCalibrationSequence();
+    });
+  }
+  if (dom.btnAdjustSettings) {
+    dom.btnAdjustSettings.addEventListener('click', () => {
+      switchViewState(STATES.IDLE);
+    });
+  }
+
+  // Requirement 5: TRAINING 右上角「🔄 重校準」按鈕，隨時可回 CALIBRATING
+  if (dom.btnTrainRecalibrate) {
+    dom.btnTrainRecalibrate.addEventListener('click', () => {
+      showToast("🔄 返回 10 秒基準校準畫面");
+      switchViewState(STATES.CALIBRATING);
     });
   }
 
@@ -2124,6 +2906,7 @@ function setupEventListeners() {
         const pausedDuration = performance.now() - AppState.pauseStartTime;
         AppState.training.startTime += pausedDuration;
         AppState.training.phaseStartTime += pausedDuration;
+        AppState.training.cycleStartTime += pausedDuration;
         AppState.isPaused = false;
         dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
         showToast("▶️ 訓練繼續");
@@ -2144,7 +2927,10 @@ function setupEventListeners() {
   dom.btnSaveLocal.addEventListener('click', saveSessionToLocalStorage);
 
   dom.btnClearHistory.addEventListener('click', () => {
-    localStorage.removeItem('breathguide_history_v3');
+    try {
+      localStorage.removeItem('soothebreath_history_v4');
+      localStorage.removeItem('breathguide_history_v3');
+    } catch (e) {}
     loadAndRenderLocalHistory();
     showToast("🗑️ 已清空本機歷史紀錄");
   });
@@ -2224,12 +3010,14 @@ function setupEventListeners() {
 // 11. 程式啟動入口 (Immediate Safe Bootstrapping)
 // ============================================================================
 function bootstrapApp() {
-  if (window.__breathGuideBootstrapped) return;
-  window.__breathGuideBootstrapped = true;
+  if (window.__sootheBreathBootstrapped) return;
+  window.__sootheBreathBootstrapped = true;
 
   cacheDomElements();
   setupEventListeners();
-  highlightActiveIeButton();
+  updatePacingCalculationsUI();
+  applyDisplayModeStyles();
+  syncVoiceUI();
   initTTS();
   loadAndRenderLocalHistory();
   initMediaPipeVision();

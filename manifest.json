@@ -1,21 +1,21 @@
 {
-  "name": "BreathGuide — 實時呼吸視覺生物反饋系統",
-  "short_name": "BreathGuide",
-  "description": "實時噘唇呼吸 (PLB) 與輔助呼吸肌代償視覺生物反饋 Progressive Web App",
+  "name": "舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統",
+  "short_name": "舒呼 SootheBreath",
+  "description": "舒呼 (SootheBreath) — 實時噘唇呼吸 (PLB) 與輔助呼吸肌代償視覺生物反饋 Progressive Web App",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "landscape",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "orientation": "any",
+  "background_color": "#f5fafd",
+  "theme_color": "#4DB6AC",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='36' fill='%230f172a'/><path d='M96 40c-30.9 0-56 25.1-56 56s25.1 56 56 56 56-25.1 56-56-25.1-56-56-56zm0 24a32 32 0 1 1 0 64 32 32 0 0 1 0-64z' fill='%2310b981'/><circle cx='96' cy='96' r='18' fill='%2338bdf8'/></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='42' fill='%23f5fafd'/><circle cx='96' cy='96' r='68' fill='%234DB6AC' opacity='0.22'/><circle cx='96' cy='96' r='48' fill='%234DB6AC'/><circle cx='96' cy='96' r='22' fill='%23ffffff'/></svg>",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%230f172a'/><path d='M256 96c-88.4 0-160 71.6-160 160s71.6 160 160 160 160-71.6 160-160-71.6-160-160-160zm0 64a96 96 0 1 1 0 192 96 96 0 0 1 0-192z' fill='%2310b981'/><circle cx='256' cy='256' r='48' fill='%2338bdf8'/></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%23f5fafd'/><circle cx='256' cy='256' r='180' fill='%234DB6AC' opacity='0.22'/><circle cx='256' cy='256' r='128' fill='%234DB6AC'/><circle cx='256' cy='256' r='58' fill='%23ffffff'/></svg>",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

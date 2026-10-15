@@ -1,7 +1,8 @@
 /**
- * BreathGuide — 實時呼吸視覺生物反饋系統 (PWA)
- * ESM Core Engine v3.0: MediaPipe Tasks Vision 0.10.14, Calibration, Math & Feedback
- * 嚴格符合 PRD Section 0 至 Section 7 規範（全面採用「噘唇」術語與互動美學升級）
+ * 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (PWA)
+ * ESM Core Engine v4.0: MediaPipe Tasks Vision 0.10.14, 10s Calibration + Confirmation,
+ * Human Mode (1.jpg-4.jpg), Centered Pacer Mode, Real-Time Average RR, Math & Feedback
+ * 嚴格保留全部臨床偵測邏輯與預設 THRESHOLDS
  */
 
 // ============================================================================
@@ -19,7 +20,7 @@ const PHASES = {
   EXHALE: 'EXHALE'
 };
 
-// 預設臨床閾值 (Default Clinical Thresholds)
+// 預設臨床閾值 (Default Clinical Thresholds — 嚴格保持不變)
 const THRESHOLDS = {
   larInhaleMax: 0.06,
   larInhaleErr: 0.08,
@@ -35,6 +36,18 @@ const THRESHOLDS = {
   shoulderHikeNormal: 0.10,
   shoulderTiltMax: 0.15,
   earlyExhaleRatio: 0.70
+};
+
+// 真人模式圖片路徑映射 (1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+const HUMAN_IMAGES = {
+  male: {
+    inhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['1.jpg']) || '1.jpg',
+    exhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['2.jpg']) || '2.jpg'
+  },
+  female: {
+    inhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['3.jpg']) || '3.jpg',
+    exhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['4.jpg']) || '4.jpg'
+  }
 };
 
 // 確保 MediaPipe 視訊時間戳嚴格遞增
@@ -57,15 +70,19 @@ const AppState = {
   modelsLoadingPromise: null,
   lastFaceResult: null,
   lastPoseResult: null,
+  calibTimerId: null,
+  isCalibConfirming: false,
   
   // 使用者設定
-  inhaleTarget: 2.0,      // 秒
-  exhaleTarget: 4.0,      // 秒
-  totalDuration: 120,     // 秒
+  inhaleTarget: 2.0,          // 秒
+  exhaleTarget: 4.0,          // 秒
+  totalDuration: 120,         // 秒
   privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist'
+  displayMode: 'balloon',     // 'balloon' | 'human'
+  humanGender: 'male',        // 'male' | 'female'
   voiceEnabled: true,
   
-  // 3秒基準校準結果 (Baseline Calibration)
+  // 10秒基準校準結果 (前7秒收集基準，後3秒確認位置)
   calibration: {
     dEyeBase: 0.22,
     yShoulderBase: 0.68,
@@ -73,7 +90,8 @@ const AppState = {
     samplesCount: 0,
     sumDEye: 0,
     sumYShoulder: 0,
-    sumLar: 0
+    sumLar: 0,
+    elapsedCalibSec: 0
   },
 
   // 實時推論變數
@@ -95,11 +113,15 @@ const AppState = {
     elapsedSeconds: 0,
     currentPhase: PHASES.INHALE,
     phaseStartTime: 0,
+    cycleStartTime: 0,
     cycleIndex: 0,
     
     // 當前週期累計有效時間
     tInActual: 0,
     tExActual: 0,
+    
+    // 實時平均呼吸頻率 (Average Respiratory Rate, breaths/min)
+    avgRR: 10.0,
     
     // 全程統計指標
     cyclesHistory: [],
@@ -145,49 +167,81 @@ function cacheDomElements() {
     toast: document.getElementById('toast-notification'),
     toastText: document.getElementById('toast-text'),
 
-    // 設定控制器
+    // 頂部導航欄按鈕
+    btnHeaderVoice: document.getElementById('btn-header-voice'),
+
+    // 設定控制器 (STATE_IDLE)
     inputInhale: document.getElementById('input-inhale-time'),
     inputExhale: document.getElementById('input-exhale-time'),
     valInhale: document.getElementById('val-inhale-time'),
     valExhale: document.getElementById('val-exhale-time'),
     labelIePreset: document.getElementById('label-ie-preset'),
+    valTargetBpm: document.getElementById('val-target-bpm'),
+    valCycleTotal: document.getElementById('val-cycle-total'),
     selectPrivacy: document.getElementById('select-privacy-mode'),
     selectDuration: document.getElementById('select-duration'),
     toggleVoice: document.getElementById('toggle-voice'),
+    btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
+    btnPacerHuman: document.getElementById('btn-pacer-human'),
+    wrapperHumanGender: document.getElementById('wrapper-human-gender'),
+    btnGenderMale: document.getElementById('btn-gender-male'),
+    btnGenderFemale: document.getElementById('btn-gender-female'),
     btnStart: document.getElementById('btn-start'),
     btnStartDemo: document.getElementById('btn-start-demo'),
-    btnCancelCalib: document.getElementById('btn-cancel-calib'),
-    btnPauseTrain: document.getElementById('btn-pause-train'),
-    btnStopEarly: document.getElementById('btn-stop-early'),
-    btnRestart: document.getElementById('btn-restart'),
-    btnExportCsv: document.getElementById('btn-export-csv'),
-    btnSaveLocal: document.getElementById('btn-save-local'),
-    btnClearHistory: document.getElementById('btn-clear-history'),
 
-    // 訓練畫面即時模式切換按鈕
-    btnModeMirror: document.getElementById('btn-mode-mirror'),
-    btnModeMesh: document.getElementById('btn-mode-mesh'),
-    btnModeMinimal: document.getElementById('btn-mode-minimal'),
-
-    // 校準與訓練視訊/畫布
+    // 10秒校準與確認機制元件 (STATE_CALIBRATING)
     calibVideo: document.getElementById('calib-video'),
     calibCanvas: document.getElementById('calib-canvas'),
+    btnCancelCalib: document.getElementById('btn-cancel-calib'),
+    calibCountdownOverlay: document.getElementById('calib-countdown-overlay'),
+    calibStageBadge: document.getElementById('calib-stage-badge'),
     calibCountdown: document.getElementById('calib-countdown'),
+    calibTitle: document.getElementById('calib-title'),
+    calibSubtitle: document.getElementById('calib-subtitle'),
+    calibProgressBar: document.getElementById('calib-progress-bar'),
+    calibConfirmOverlay: document.getElementById('calib-confirm-overlay'),
+    calibSummaryMetrics: document.getElementById('calib-summary-metrics'),
+    btnConfirmStart: document.getElementById('btn-confirm-start'),
+    btnRecalibrate: document.getElementById('btn-recalibrate'),
+    btnAdjustSettings: document.getElementById('btn-adjust-settings'),
+
+    // 訓練畫面視訊、畫布與佈局容器 (STATE_TRAINING)
+    visionContainer: document.getElementById('vision-container'),
+    guidancePanel: document.getElementById('guidance-panel'),
     trainVideo: document.getElementById('train-video'),
     trainCanvas: document.getElementById('train-canvas'),
     badgeMeshMode: document.getElementById('badge-mesh-mode'),
 
-    // 狀態欄與節奏球
+    // 訓練畫面頂部狀態與右上角控制按鈕
     pillPhase: document.getElementById('pill-phase'),
     pillCycle: document.getElementById('pill-cycle'),
     valCycleCount: document.getElementById('val-cycle-count'),
     valTimerLeft: document.getElementById('val-timer-left'),
+    valLiveRr: document.getElementById('val-live-rr'),
+    btnModeMirror: document.getElementById('btn-mode-mirror'),
+    btnModeMesh: document.getElementById('btn-mode-mesh'),
+    btnModeMinimal: document.getElementById('btn-mode-minimal'),
+    btnTrainBalloon: document.getElementById('btn-train-balloon'),
+    btnTrainMale: document.getElementById('btn-train-male'),
+    btnTrainFemale: document.getElementById('btn-train-female'),
+    btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
+
+    // 呼吸節奏球與真人示範元件
+    pacerVisualArea: document.getElementById('pacer-visual-area'),
+    pacerOuterRing: document.getElementById('pacer-outer-ring'),
     pacerBall: document.getElementById('pacer-ball'),
     pacerActionText: document.getElementById('pacer-action-text'),
     pacerSecondsText: document.getElementById('pacer-seconds-text'),
+    humanDemoWrapper: document.getElementById('human-demo-wrapper'),
+    humanDemoBox: document.getElementById('human-demo-box'),
+    imgHumanInhale: document.getElementById('img-human-inhale'),
+    imgHumanExhale: document.getElementById('img-human-exhale'),
+    humanActionText: document.getElementById('human-action-text'),
+    humanSecondsText: document.getElementById('human-seconds-text'),
     pacerPhaseHint: document.getElementById('pacer-phase-hint'),
 
-    // 三張指示燈卡
+    // 四張實時生物反饋指示卡 (含新增平均呼吸頻率卡)
+    biofeedbackCardsGrid: document.getElementById('biofeedback-cards-grid'),
     cardPlb: document.getElementById('card-status-plb'),
     textPlbState: document.getElementById('text-plb-state'),
     badgePlbScore: document.getElementById('badge-plb-score'),
@@ -197,6 +251,27 @@ function cacheDomElements() {
     cardIe: document.getElementById('card-status-ie'),
     textIeState: document.getElementById('text-ie-state'),
     badgeIeActual: document.getElementById('badge-ie-actual'),
+    cardRr: document.getElementById('card-status-rr'),
+    textRrState: document.getElementById('text-rr-state'),
+    badgeRrActual: document.getElementById('badge-rr-actual'),
+
+    // 訓練底部控制按鈕
+    btnPauseTrain: document.getElementById('btn-pause-train'),
+    btnStopEarly: document.getElementById('btn-stop-early'),
+
+    // 總結報告畫面元件 (STATE_SUMMARY)
+    btnRestart: document.getElementById('btn-restart'),
+    btnExportCsv: document.getElementById('btn-export-csv'),
+    btnSaveLocal: document.getElementById('btn-save-local'),
+    btnClearHistory: document.getElementById('btn-clear-history'),
+    sumCycles: document.getElementById('sum-cycles'),
+    sumDuration: document.getElementById('sum-duration'),
+    sumRr: document.getElementById('sum-rr'),
+    sumIe: document.getElementById('sum-ie'),
+    sumPlbAcc: document.getElementById('sum-plb-acc'),
+    sumShoulderAcc: document.getElementById('sum-shoulder-acc'),
+    sumGrade: document.getElementById('sum-grade'),
+    listHistory: document.getElementById('list-history'),
 
     // 調試面板 (Debug Drawer)
     btnToggleDebug: document.getElementById('btn-toggle-debug'),
@@ -209,6 +284,7 @@ function cacheDomElements() {
     dbgShoulder: document.getElementById('dbg-val-shoulder'),
     dbgDeye: document.getElementById('dbg-val-deye'),
     dbgTilt: document.getElementById('dbg-val-tilt'),
+    dbgRr: document.getElementById('dbg-val-rr'),
     dbgRangeLarInMax: document.getElementById('dbg-range-lar-in-max'),
     dbgLblLarInMax: document.getElementById('dbg-lbl-lar-in-max'),
     dbgRangePuckerMin: document.getElementById('dbg-range-pucker-min'),
@@ -226,17 +302,7 @@ function cacheDomElements() {
     modalErrorSteps: document.getElementById('modal-error-steps'),
     btnModalRetry: document.getElementById('btn-modal-retry'),
     btnModalDemo: document.getElementById('btn-modal-demo'),
-    btnModalClose: document.getElementById('btn-modal-close'),
-
-    // 總結報告數值
-    sumCycles: document.getElementById('sum-cycles'),
-    sumDuration: document.getElementById('sum-duration'),
-    sumRr: document.getElementById('sum-rr'),
-    sumIe: document.getElementById('sum-ie'),
-    sumPlbAcc: document.getElementById('sum-plb-acc'),
-    sumShoulderAcc: document.getElementById('sum-shoulder-acc'),
-    sumGrade: document.getElementById('sum-grade'),
-    listHistory: document.getElementById('list-history')
+    btnModalClose: document.getElementById('btn-modal-close')
   };
 }
 
@@ -308,7 +374,7 @@ async function initMediaPipeVision() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        console.log("MediaPipe Tasks Vision 0.10.14 (GPU) 模型加載成功");
+        console.log("舒呼 SootheBreath — MediaPipe Tasks Vision 0.10.14 (GPU) 模型加載成功");
       } catch (gpuErr) {
         console.warn("GPU 加速初始化失敗，自動切換至 CPU 模式:", gpuErr);
         AppState.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
@@ -329,7 +395,7 @@ async function initMediaPipeVision() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        console.log("MediaPipe Tasks Vision 0.10.14 (CPU) 模型加載成功");
+        console.log("舒呼 SootheBreath — MediaPipe Tasks Vision 0.10.14 (CPU) 模型加載成功");
       }
       return true;
     } catch (err) {
@@ -369,6 +435,13 @@ async function startCamera(videoElement) {
   };
 
   try {
+    // 若已有運行中的視訊串流且有效，直接複用避免重複請求閃爍
+    if (AppState.stream && AppState.stream.active) {
+      videoElement.srcObject = AppState.stream;
+      await videoElement.play().catch(() => {});
+      return true;
+    }
+
     if (AppState.stream) {
       AppState.stream.getTracks().forEach(track => track.stop());
     }
@@ -433,7 +506,7 @@ function showCameraDiagnosticError(error) {
       stepsHtml = `
         <p>1. 請檢查手提電腦 (Laptop) 鏡頭上方的<b>實體防窺撥片 (Privacy Shutter)</b> 是否已打開。</p>
         <p>2. 部分品牌電腦（如 Lenovo、ASUS、MSI）配有鍵盤相機開關快速鍵（例如 Fn + F8 或 F10）。</p>
-        <p>3. 若目前裝置無鏡頭，你可點擊下方「<b>進入免鏡頭模擬訓練</b>」預覽完整功能。</p>
+        <p>3. 若目前裝置無鏡頭，你可點擊下方「<b>🧪 免鏡頭模擬訓練</b>」預覽完整功能。</p>
       `;
       break;
 
@@ -443,14 +516,14 @@ function showCameraDiagnosticError(error) {
       desc = "相機硬體正在被其他視訊通話或後台程式使用。";
       stepsHtml = `
         <p>1. 請檢查並先完全關閉 <b>Zoom、Microsoft Teams、Google Meet、FaceTime</b> 或其他相機軟件。</p>
-        <p>2. 重新整理本網頁後再試一次，或先使用「<b>免鏡頭模擬訓練</b>」。</p>
+        <p>2. 重新整理本網頁後再試一次，或先使用「<b>🧪 免鏡頭模擬訓練</b>」。</p>
       `;
       break;
 
     default:
       title = "未知相機存取錯誤 (" + (error.name || "Error") + ")";
       desc = error.message || "系統發生未預期的鏡頭存取問題。";
-      stepsHtml = `<p>請嘗試重新整理瀏覽器，或點擊下方「免鏡頭模擬訓練」體驗完整呼吸節奏導引。</p>`;
+      stepsHtml = `<p>請嘗試重新整理瀏覽器，或點擊下方「🧪 免鏡頭模擬訓練」體驗完整呼吸節奏導引。</p>`;
       break;
   }
 
@@ -461,7 +534,7 @@ function showCameraDiagnosticError(error) {
 }
 
 // ============================================================================
-// 5. 核心電腦視覺運算公式 (Section 3 Math & Algorithms)
+// 5. 核心電腦視覺運算公式 (Section 3 Math & Algorithms — 嚴格保留全部臨床邏輯)
 // ============================================================================
 
 /**
@@ -543,7 +616,6 @@ function generateSimulatedDetections(now) {
   const pucker = isExhale ? (0.58 + wave * 0.08) : 0.08;
   const funnel = isExhale ? (0.48 + wave * 0.06) : 0.06;
 
-  // 建立模擬面部特徵點
   const face = [];
   for (let i = 0; i < 468; i++) {
     face.push({ x: 0.5, y: 0.42, z: 0 });
@@ -555,7 +627,6 @@ function generateSimulatedDetections(now) {
   face[13] = { x: 0.50, y: 0.49 - (lar * 0.05) };
   face[14] = { x: 0.50, y: 0.49 + (lar * 0.05) };
 
-  // 臉部橢圓輪廓點
   const ovalIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
   ovalIndices.forEach((idx, k) => {
     const angle = (k / ovalIndices.length) * Math.PI * 2 - Math.PI / 2;
@@ -565,7 +636,6 @@ function generateSimulatedDetections(now) {
     };
   });
 
-  // 雙肩特徵點
   const pose = [];
   for (let i = 0; i < 33; i++) {
     pose.push({ x: 0.5, y: 0.7, z: 0 });
@@ -603,7 +673,7 @@ function initTTS() {
     const voices = window.speechSynthesis.getVoices();
     AppState.tts.speechSynthesisVoice = 
       voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-Hant-HK') ||
-      voices.find(v => v.lang.includes('HK')) ||
+      voices.find(v => v.lang.includes('HK') || v.lang.includes('yue')) ||
       voices.find(v => v.lang === 'zh-TW') ||
       voices.find(v => v.lang.startsWith('zh')) ||
       null;
@@ -633,6 +703,17 @@ function speakText(text, isPhaseSwitch = false) {
     AppState.tts.lastSpokenTime = now;
   } catch (err) {
     console.warn("語音合成播放失敗:", err);
+  }
+}
+
+function syncVoiceUI() {
+  if (dom.toggleVoice) {
+    dom.toggleVoice.checked = AppState.voiceEnabled;
+  }
+  if (dom.btnHeaderVoice) {
+    dom.btnHeaderVoice.innerHTML = AppState.voiceEnabled
+      ? `<span>🔊</span><span class="hidden sm:inline">語音導航</span>`
+      : `<span>🔇</span><span class="hidden sm:inline">已靜音</span>`;
   }
 }
 
@@ -675,21 +756,26 @@ function renderBottomBanner(message, priority) {
   dom.bottomBanner.classList.remove('hidden');
 
   if (priority <= 2) {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-rose-500/80 bg-rose-950/95 text-rose-100";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-rose-400 bg-rose-600 text-white shadow-lg";
   } else if (priority <= 4) {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-amber-500/80 bg-amber-950/95 text-amber-100";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-amber-400 bg-amber-500 text-white shadow-lg";
   } else {
-    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-2xl md:text-3xl leading-snug border-t border-emerald-500/60 bg-slate-900/95 text-emerald-300";
+    dom.bottomBanner.className = "shrink-0 w-full py-3.5 px-6 text-center z-30 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-teal-200 bg-white/95 text-[#2E7D32] shadow-md";
   }
 }
 
 // ============================================================================
 // 8. 狀態一至四之生命週期 (State Machine Lifecycle)
 // ============================================================================
-
 function switchViewState(targetState) {
+  if (AppState.calibTimerId) {
+    clearInterval(AppState.calibTimerId);
+    AppState.calibTimerId = null;
+  }
+
   AppState.currentState = targetState;
   AppState.isPaused = false;
+  AppState.isCalibConfirming = false;
 
   dom.stateIdle.classList.add('hidden');
   dom.stateCalib.classList.add('hidden');
@@ -723,10 +809,27 @@ function switchViewState(targetState) {
 }
 
 // ----------------------------------------------------------------------------
-// 3 秒坐姿基準校準 (Section 3.1 CALIBRATING State)
+// 10 秒坐姿基準校準 + 確認機制 (Requirement 4: 前7秒收集基準，後3秒顯示「請確認位置」)
 // ----------------------------------------------------------------------------
 async function runCalibrationSequence() {
+  if (AppState.calibTimerId) {
+    clearInterval(AppState.calibTimerId);
+    AppState.calibTimerId = null;
+  }
+  AppState.isCalibConfirming = false;
+
+  // 顯示倒數覆蓋層，隱藏結束後的確認面板
+  if (dom.calibCountdownOverlay) dom.calibCountdownOverlay.classList.remove('hidden');
+  if (dom.calibConfirmOverlay) dom.calibConfirmOverlay.classList.add('hidden');
+
   dom.calibCountdown.textContent = "準備中";
+  if (dom.calibStageBadge) {
+    dom.calibStageBadge.textContent = "步驟 1/2：收集基準坐姿 (前 7 秒)";
+    dom.calibStageBadge.className = "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#4DB6AC]/20 text-teal-800 border border-[#4DB6AC]/40";
+  }
+  if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
+  if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在啟動鏡頭並準備收集 7 秒基準坐姿...";
+  if (dom.calibProgressBar) dom.calibProgressBar.style.width = "0%";
 
   const started = await startCamera(dom.calibVideo);
   if (!started) {
@@ -739,6 +842,7 @@ async function runCalibrationSequence() {
     await initMediaPipeVision();
   }
 
+  // 重置校準累計器
   AppState.calibration = {
     dEyeBase: 0.22,
     yShoulderBase: 0.72,
@@ -746,36 +850,76 @@ async function runCalibrationSequence() {
     samplesCount: 0,
     sumDEye: 0,
     sumYShoulder: 0,
-    sumLar: 0
+    sumLar: 0,
+    elapsedCalibSec: 0
   };
 
   speakText("請自然坐直、沉肩放鬆、閉上嘴巴，正在記錄基準坐姿", true);
 
-  let secondsRemaining = 3;
+  const totalCalibSeconds = 10;
+  let secondsRemaining = totalCalibSeconds;
   dom.calibCountdown.textContent = secondsRemaining;
+  if (dom.calibSubtitle) {
+    dom.calibSubtitle.textContent = "前 7 秒：正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+  }
 
-  const timer = setInterval(() => {
+  AppState.calibTimerId = setInterval(() => {
     if (AppState.currentState !== STATES.CALIBRATING) {
-      clearInterval(timer);
+      clearInterval(AppState.calibTimerId);
+      AppState.calibTimerId = null;
       return;
     }
+
     secondsRemaining--;
-    if (secondsRemaining > 0) {
+    const elapsed = totalCalibSeconds - secondsRemaining;
+    AppState.calibration.elapsedCalibSec = elapsed;
+
+    if (dom.calibProgressBar) {
+      dom.calibProgressBar.style.width = `${Math.min(100, (elapsed / totalCalibSeconds) * 100)}%`;
+    }
+
+    if (secondsRemaining > 3) {
+      // 前 7 秒 (倒數 10 -> 4)：收集基準
       dom.calibCountdown.textContent = secondsRemaining;
+      if (dom.calibStageBadge) {
+        dom.calibStageBadge.textContent = `步驟 1/2：收集基準坐姿 (剩餘 ${secondsRemaining - 3} 秒)`;
+      }
+      if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
+      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+    } else if (secondsRemaining > 0) {
+      // 後 3 秒 (倒數 3 -> 1)：顯示「請確認位置」
+      dom.calibCountdown.textContent = secondsRemaining;
+      if (secondsRemaining === 3) {
+        lockBaselineFromSamples();
+        speakText("請確認位置", true);
+      }
+      if (dom.calibStageBadge) {
+        dom.calibStageBadge.textContent = "步驟 2/2：位置確認階段 (後 3 秒)";
+        dom.calibStageBadge.className = "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#FF7043]/20 text-[#d84315] border border-[#FF7043]/40";
+      }
+      if (dom.calibTitle) dom.calibTitle.textContent = "請確認位置";
+      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "基準已鎖定，請保持面部及雙肩對齊於綠色參考框內...";
     } else {
-      clearInterval(timer);
-      finalizeCalibration();
+      // 10 秒結束：不自動開始訓練，進入確認畫面
+      clearInterval(AppState.calibTimerId);
+      AppState.calibTimerId = null;
+      showCalibrationConfirmation();
     }
   }, 1000);
 
   function calibFrameLoop() {
     if (AppState.currentState !== STATES.CALIBRATING) return;
 
+    const isCollectingPhase = !AppState.isCalibConfirming && (AppState.calibration.elapsedCalibSec < 7);
+
     if (AppState.isDemoMode) {
-      AppState.calibration.sumDEye += 0.18;
-      AppState.calibration.sumLar += 0.04;
-      AppState.calibration.sumYShoulder += 0.72;
-      AppState.calibration.samplesCount++;
+      if (isCollectingPhase) {
+        AppState.calibration.sumDEye += 0.20;
+        AppState.calibration.sumLar += 0.04;
+        AppState.calibration.sumYShoulder += 0.72;
+        AppState.calibration.samplesCount++;
+      }
+      renderCalibrationCanvas(generateSimulatedDetections(performance.now()));
     } else if (dom.calibVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
       try {
         const ts = getNextTimestamp();
@@ -787,15 +931,18 @@ async function runCalibrationSequence() {
           const face = faceResult.faceLandmarks[0];
           const pose = poseResult.landmarks[0];
 
-          const dEye = calculateDEye(face);
-          const lar = calculateLAR(face);
-          const yShoulder = (pose[11].y + pose[12].y) / 2;
+          if (isCollectingPhase) {
+            const dEye = calculateDEye(face);
+            const lar = calculateLAR(face);
+            const yShoulder = (pose[11].y + pose[12].y) / 2;
 
-          AppState.calibration.sumDEye += dEye;
-          AppState.calibration.sumLar += lar;
-          AppState.calibration.sumYShoulder += yShoulder;
-          AppState.calibration.samplesCount++;
+            AppState.calibration.sumDEye += dEye;
+            AppState.calibration.sumLar += lar;
+            AppState.calibration.sumYShoulder += yShoulder;
+            AppState.calibration.samplesCount++;
+          }
         }
+        renderCalibrationCanvas({ faceResult, poseResult });
       } catch (e) {
         console.warn("校準幀運算略過:", e);
       }
@@ -805,7 +952,7 @@ async function runCalibrationSequence() {
   requestAnimationFrame(calibFrameLoop);
 }
 
-function finalizeCalibration() {
+function lockBaselineFromSamples() {
   const c = AppState.calibration;
   if (c.samplesCount > 5) {
     c.dEyeBase = c.sumDEye / c.samplesCount;
@@ -816,13 +963,81 @@ function finalizeCalibration() {
     c.larRest = 0.04;
     c.yShoulderBase = 0.72;
   }
+}
 
-  speakText("基準坐姿已記錄，現在開始訓練", true);
-  setTimeout(() => {
-    if (AppState.currentState === STATES.CALIBRATING) {
-      switchViewState(STATES.TRAINING);
+function showCalibrationConfirmation() {
+  lockBaselineFromSamples();
+  AppState.isCalibConfirming = true;
+
+  if (dom.calibCountdownOverlay) dom.calibCountdownOverlay.classList.add('hidden');
+  if (dom.calibConfirmOverlay) dom.calibConfirmOverlay.classList.remove('hidden');
+
+  const c = AppState.calibration;
+  if (dom.calibSummaryMetrics) {
+    dom.calibSummaryMetrics.textContent = `已收集 ${c.samplesCount} 幀基準 · D_eye: ${c.dEyeBase.toFixed(2)} · 肩高基準: ${c.yShoulderBase.toFixed(2)} · 閉口 LAR: ${c.larRest.toFixed(2)}`;
+  }
+
+  speakText("請確認位置，準備好可以點擊確認並開始訓練", true);
+}
+
+function renderCalibrationCanvas(detections) {
+  if (!dom.calibCanvas) return;
+  const canvas = dom.calibCanvas;
+  const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 640, height: 360 };
+  if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+    canvas.width = Math.floor(rect.width) || 640;
+    canvas.height = Math.floor(rect.height) || 360;
+  }
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  if (AppState.isDemoMode) {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  if (!detections) return;
+  const { faceResult, poseResult } = detections;
+
+  if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
+    const pose = poseResult.landmarks[0];
+    const p11 = { x: pose[11].x * w, y: pose[11].y * h };
+    const p12 = { x: pose[12].x * w, y: pose[12].y * h };
+    ctx.save();
+    ctx.strokeStyle = '#4DB6AC';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(p11.x, p11.y);
+    ctx.lineTo(p12.x, p12.y);
+    ctx.stroke();
+    ctx.fillStyle = '#4DB6AC';
+    ctx.beginPath();
+    ctx.arc(p11.x, p11.y, 6, 0, Math.PI * 2);
+    ctx.arc(p12.x, p12.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (faceResult && faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
+    const face = faceResult.faceLandmarks[0];
+    const lipPoints = [78, 13, 308, 14].map(idx => ({
+      x: face[idx].x * w,
+      y: face[idx].y * h
+    }));
+    ctx.save();
+    ctx.strokeStyle = '#4DB6AC';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
+    for (let i = 1; i < lipPoints.length; i++) {
+      ctx.lineTo(lipPoints[i].x, lipPoints[i].y);
     }
-  }, 350);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -834,13 +1049,18 @@ async function runTrainingSequence() {
     await dom.trainVideo.play().catch(e => console.log(e));
   }
 
-  AppState.training.startTime = performance.now();
-  AppState.training.phaseStartTime = performance.now();
+  const now = performance.now();
+  const targetRR = 60 / (AppState.inhaleTarget + AppState.exhaleTarget);
+
+  AppState.training.startTime = now;
+  AppState.training.phaseStartTime = now;
+  AppState.training.cycleStartTime = now;
   AppState.training.currentPhase = PHASES.INHALE;
   AppState.training.cycleIndex = 1;
   AppState.training.cyclesHistory = [];
   AppState.training.tInActual = 0;
   AppState.training.tExActual = 0;
+  AppState.training.avgRR = targetRR;
   AppState.training.totalInhaleFrames = 0;
   AppState.training.validInhaleFrames = 0;
   AppState.training.totalExhaleFrames = 0;
@@ -852,23 +1072,27 @@ async function runTrainingSequence() {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
+  applyPrivacyModeStyles();
+  applyDisplayModeStyles();
   syncCanvasDimensions();
   window.addEventListener('resize', syncCanvasDimensions);
 
-  applyPrivacyModeStyles();
   triggerPhaseSwitch(PHASES.INHALE);
+  updateLiveRespiratoryRate(now);
 
   requestAnimationFrame(trainingInferenceLoop);
 }
 
 function syncCanvasDimensions() {
-  const container = document.getElementById('vision-container');
-  if (container && dom.trainCanvas) {
-    dom.trainCanvas.width = container.clientWidth || 640;
-    dom.trainCanvas.height = container.clientHeight || 480;
+  if (dom.visionContainer && dom.trainCanvas && AppState.privacyMode !== 'minimalist') {
+    dom.trainCanvas.width = dom.visionContainer.clientWidth || 640;
+    dom.trainCanvas.height = dom.visionContainer.clientHeight || 480;
   }
 }
 
+/**
+ * 切換視覺私隱模式 + Pacer 模式圓球與文字提示完全居中 (Requirement 6)
+ */
 function applyPrivacyModeStyles() {
   const mode = AppState.privacyMode;
   if (dom.selectPrivacy && dom.selectPrivacy.value !== mode) {
@@ -876,29 +1100,109 @@ function applyPrivacyModeStyles() {
   }
 
   // 更新訓練畫面右上角模式按鈕高亮
-  const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-teal-500 text-slate-950 shadow transition cursor-pointer";
-  const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer";
+  const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-sm transition cursor-pointer";
+  const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
   if (dom.btnModeMirror) dom.btnModeMirror.className = mode === 'mirror' ? activeCls : inactiveCls;
   if (dom.btnModeMesh) dom.btnModeMesh.className = mode === 'privacy_mesh' ? activeCls : inactiveCls;
   if (dom.btnModeMinimal) dom.btnModeMinimal.className = mode === 'minimalist' ? activeCls : inactiveCls;
 
-  if (mode === 'privacy_mesh') {
-    dom.trainVideo.style.opacity = '0';
-    dom.trainCanvas.style.opacity = '1';
-    dom.trainCanvas.classList.add('privacy-mesh-canvas');
-    dom.badgeMeshMode.textContent = AppState.isDemoMode ? "🧪 免鏡頭模擬骨架模式" : "🔒 去識別化黑底骨架模式";
-    dom.badgeMeshMode.classList.remove('hidden');
-  } else if (mode === 'minimalist') {
-    dom.trainVideo.style.opacity = '0';
-    dom.trainCanvas.style.opacity = '0';
-    dom.badgeMeshMode.textContent = "🧘 純呼吸節奏球專注模式";
-    dom.badgeMeshMode.classList.remove('hidden');
+  if (mode === 'minimalist') {
+    // Requirement 6: Pacer 模式時隱藏左側空白視訊欄，讓圓球與文字提示在畫面正中央居中
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-px h-px opacity-0 pointer-events-none fixed -left-[9999px] overflow-hidden";
+    }
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full flex-1 h-full bg-[#f5fafd] flex flex-col items-center justify-between p-4 md:p-8 overflow-y-auto";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-4 relative min-h-[240px] w-full max-w-xl mx-auto text-center";
+    }
+    if (dom.biofeedbackCardsGrid) {
+      dom.biofeedbackCardsGrid.className = "w-full max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-3";
+    }
   } else {
-    dom.trainVideo.style.opacity = AppState.isDemoMode ? '0' : '1';
-    dom.trainCanvas.style.opacity = '1';
-    dom.trainCanvas.classList.remove('privacy-mesh-canvas');
-    dom.badgeMeshMode.textContent = "📷 實時鏡像 + AR 輔助框";
-    dom.badgeMeshMode.classList.remove('hidden');
+    // 雙欄模式 (Mirror / Privacy Mesh)：左側 60% 視訊/骨架，右側 40% 引導欄
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0";
+    }
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center";
+    }
+    if (dom.biofeedbackCardsGrid) {
+      dom.biofeedbackCardsGrid.className = "w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5";
+    }
+
+    if (mode === 'privacy_mesh') {
+      dom.trainVideo.style.opacity = '0';
+      dom.trainCanvas.style.opacity = '1';
+      dom.trainCanvas.classList.add('privacy-mesh-canvas');
+      dom.badgeMeshMode.textContent = AppState.isDemoMode ? "🧪 免鏡頭模擬骨架模式" : "🔒 去識別化黑底骨架模式";
+      dom.badgeMeshMode.classList.remove('hidden');
+    } else {
+      dom.trainVideo.style.opacity = AppState.isDemoMode ? '0' : '1';
+      dom.trainCanvas.style.opacity = '1';
+      dom.trainCanvas.classList.remove('privacy-mesh-canvas');
+      dom.badgeMeshMode.textContent = "📷 實時鏡像 + AR 輔助框";
+      dom.badgeMeshMode.classList.remove('hidden');
+    }
+    setTimeout(syncCanvasDimensions, 50);
+  }
+}
+
+/**
+ * 切換氣球模式 vs 真人模式 (Requirement 3: 1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+ */
+function applyDisplayModeStyles() {
+  const isHuman = AppState.displayMode === 'human';
+  const gender = AppState.humanGender;
+
+  // 更新 STATE_IDLE 設定按鈕樣式
+  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+
+  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = !isHuman ? idleActive : idleInactive;
+  if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
+  if (dom.wrapperHumanGender) {
+    dom.wrapperHumanGender.classList.toggle('hidden', !isHuman);
+  }
+  if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? idleActive : idleInactive;
+  if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? idleActive : idleInactive;
+
+  // 更新 STATE_TRAINING 頂部快速切換按鈕樣式
+  const trainActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const trainInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
+  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = !isHuman ? trainActive : trainInactive;
+  if (dom.btnTrainMale) dom.btnTrainMale.className = (isHuman && gender === 'male') ? trainActive : trainInactive;
+  if (dom.btnTrainFemale) dom.btnTrainFemale.className = (isHuman && gender === 'female') ? trainActive : trainInactive;
+
+  // 更新圖片路徑 (1.jpg/2.jpg 或 3.jpg/4.jpg)
+  const imgPair = HUMAN_IMAGES[gender] || HUMAN_IMAGES.male;
+  if (dom.imgHumanInhale && dom.imgHumanInhale.getAttribute('src') !== imgPair.inhale) {
+    dom.imgHumanInhale.src = imgPair.inhale;
+  }
+  if (dom.imgHumanExhale && dom.imgHumanExhale.getAttribute('src') !== imgPair.exhale) {
+    dom.imgHumanExhale.src = imgPair.exhale;
+  }
+
+  // 切換氣球或真人框顯示
+  if (dom.pacerOuterRing) {
+    dom.pacerOuterRing.classList.toggle('hidden', isHuman);
+  }
+  if (dom.humanDemoWrapper) {
+    dom.humanDemoWrapper.classList.toggle('hidden', !isHuman);
+  }
+
+  // 同步當前吸呼階段的圖片透明度
+  const isInhale = AppState.training.currentPhase === PHASES.INHALE;
+  if (dom.imgHumanInhale && dom.imgHumanExhale) {
+    dom.imgHumanInhale.classList.toggle('active-img', isInhale);
+    dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
+  }
+  if (dom.humanDemoBox) {
+    dom.humanDemoBox.classList.toggle('exhale-border', !isInhale);
   }
 }
 
@@ -922,7 +1226,7 @@ function trainingInferenceLoop() {
   dom.valCycleCount.textContent = train.cycleIndex;
 
   if (remainingTotal <= 0) {
-    finalizeCurrentCycle();
+    finalizeCurrentCycle(now);
     switchViewState(STATES.SUMMARY);
     return;
   }
@@ -951,17 +1255,70 @@ function trainingInferenceLoop() {
   // 2. 呼吸節奏狀態機推進
   advanceBreathingPacer(now);
 
-  // 3. 繪製視覺 Canvas 覆蓋層
+  // 3. 即時更新平均呼吸頻率 (Requirement 7)
+  updateLiveRespiratoryRate(now);
+
+  // 4. 繪製視覺 Canvas 覆蓋層
   renderTrainingCanvas(AppState.lastFaceResult, AppState.lastPoseResult);
 
-  // 4. 更新調試面板讀數
+  // 5. 更新調試面板讀數
   updateDebugReadouts();
 
   requestAnimationFrame(trainingInferenceLoop);
 }
 
 // ----------------------------------------------------------------------------
-// 逐幀特徵點運算與臨床規則評估 (Frame Processing & Clinical Rules)
+// 實時平均呼吸頻率計算與回饋 (Requirement 7: Average Respiratory Rate)
+// ----------------------------------------------------------------------------
+function updateLiveRespiratoryRate(now) {
+  const train = AppState.training;
+  const targetCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
+  const targetRR = 60 / targetCycleSec;
+
+  const elapsedSec = Math.max(0.1, (now - train.startTime) / 1000);
+  const currentCycleElapsed = Math.max(0, (now - train.cycleStartTime) / 1000);
+  const currentCycleProgress = Math.min(0.99, currentCycleElapsed / targetCycleSec);
+
+  // 結合已完成週期與當前週期進度計算即時平均呼吸頻率 (breaths/min)
+  let liveAvgRR = targetRR;
+  if (train.cyclesHistory.length > 0) {
+    const totalCompletedDuration = train.cyclesHistory.reduce((acc, c) => acc + (c.cycleDuration || targetCycleSec), 0);
+    const meanCompletedRR = (train.cyclesHistory.length / Math.max(1, totalCompletedDuration)) * 60;
+    const sessionRR = ((train.cyclesHistory.length + currentCycleProgress) / elapsedSec) * 60;
+    liveAvgRR = (meanCompletedRR * 0.5) + (sessionRR * 0.5);
+  } else if (elapsedSec >= 1.5) {
+    liveAvgRR = ((currentCycleProgress) / elapsedSec) * 60;
+  }
+
+  train.avgRR = liveAvgRR;
+  const rrFormatted = liveAvgRR.toFixed(1);
+
+  if (dom.valLiveRr) {
+    dom.valLiveRr.textContent = rrFormatted;
+  }
+  if (dom.badgeRrActual) {
+    dom.badgeRrActual.textContent = `${rrFormatted} 次/分`;
+  }
+  if (dom.textRrState && dom.cardRr) {
+    const diff = Math.abs(liveAvgRR - targetRR);
+    if (liveAvgRR > 20) {
+      dom.textRrState.textContent = `${rrFormatted} BPM (呼吸偏快，請放慢)`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-amber-600";
+      dom.cardRr.className = "p-3 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between transition-all shadow-sm";
+    } else if (diff <= 2.5) {
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)} 達標)`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardRr.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
+    } else {
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)})`;
+      dom.textRrState.className = "text-xs md:text-sm font-bold text-teal-700";
+      dom.cardRr.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 逐幀特徵點運算與臨床規則評估 (Frame Processing & Clinical Rules — 嚴格保留)
 // ----------------------------------------------------------------------------
 function processFrameDetections(faceResult, poseResult) {
   const m = AppState.currentMetrics;
@@ -1042,7 +1399,7 @@ function processFrameDetections(faceResult, poseResult) {
 }
 
 // ----------------------------------------------------------------------------
-// 右側節奏球與週期狀態機推進 (Pacer Timing & Switching)
+// 節奏球 / 真人示範與週期狀態機推進 (Pacer Timing & Switching)
 // ----------------------------------------------------------------------------
 function advanceBreathingPacer(now) {
   const train = AppState.training;
@@ -1054,11 +1411,13 @@ function advanceBreathingPacer(now) {
     
     dom.pacerActionText.textContent = "用鼻吸氣";
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
+    if (dom.humanActionText) dom.humanActionText.textContent = "用鼻吸氣";
+    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "閉口由鼻吸氣 · 雙肩保持下沉";
     
-    const scale = 1.0 + (progress * 0.62);
+    const scale = 0.85 + (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
-    dom.pacerBall.className = "w-24 h-24 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 shadow-2xl shadow-emerald-500/50 flex flex-col items-center justify-center text-slate-950 font-bold transition-transform duration-100";
+    dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
 
     if (phaseElapsed >= AppState.inhaleTarget) {
       triggerPhaseSwitch(PHASES.EXHALE);
@@ -1069,19 +1428,22 @@ function advanceBreathingPacer(now) {
 
     dom.pacerActionText.textContent = "噘唇吹氣";
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
+    if (dom.humanActionText) dom.humanActionText.textContent = "噘唇吹氣";
+    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "嘴唇噘起如吹蠟燭 · 均勻慢呼";
 
-    const scale = 1.62 - (progress * 0.77);
+    const scale = 1.30 - (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
-    dom.pacerBall.className = "w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 shadow-2xl shadow-cyan-500/50 flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
+    dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-exhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
 
     if (phaseElapsed > (AppState.exhaleTarget * 0.5) && train.tExActual < (phaseElapsed * 0.5)) {
       updateFeedbackQueue(4, "呼氣太快完喇，試下跟住圓圈慢慢吹長啲氣");
     }
 
     if (phaseElapsed >= AppState.exhaleTarget) {
-      finalizeCurrentCycle();
+      finalizeCurrentCycle(now);
       train.cycleIndex++;
+      train.cycleStartTime = now;
       triggerPhaseSwitch(PHASES.INHALE);
     }
   }
@@ -1092,28 +1454,42 @@ function triggerPhaseSwitch(newPhase) {
   train.currentPhase = newPhase;
   train.phaseStartTime = performance.now();
 
-  if (newPhase === PHASES.INHALE) {
+  const isInhale = newPhase === PHASES.INHALE;
+  if (dom.imgHumanInhale && dom.imgHumanExhale) {
+    dom.imgHumanInhale.classList.toggle('active-img', isInhale);
+    dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
+  }
+  if (dom.humanDemoBox) {
+    dom.humanDemoBox.classList.toggle('exhale-border', !isInhale);
+  }
+
+  if (isInhale) {
     dom.pillPhase.textContent = "吸氣階段 (閉口鼻吸)";
-    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-emerald-400 border border-emerald-500/40 shadow-lg backdrop-blur";
+    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#4DB6AC] text-white shadow-sm";
     speakText("吸氣", true);
   } else {
     dom.pillPhase.textContent = "呼氣階段 (噘唇吹氣)";
-    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-sm bg-slate-900/90 text-cyan-400 border border-cyan-500/40 shadow-lg backdrop-blur";
+    dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#FF7043] text-white shadow-sm";
     speakText("慢慢噘唇呼氣", true);
   }
 }
 
-function finalizeCurrentCycle() {
+function finalizeCurrentCycle(now = performance.now()) {
   const train = AppState.training;
   const safeTin = Math.max(train.tInActual, 0.5);
   const achievedIeRatio = train.tExActual / safeTin;
+  const cycleDuration = Math.max(1.0, (now - (train.cycleStartTime || train.phaseStartTime)) / 1000);
+  const cycleRR = 60 / cycleDuration;
 
   train.cyclesHistory.push({
     cycle: train.cycleIndex,
     tInActual: train.tInActual,
     tExActual: train.tExActual,
     achievedIe: achievedIeRatio,
-    targetIe: AppState.exhaleTarget / AppState.inhaleTarget
+    targetIe: AppState.exhaleTarget / AppState.inhaleTarget,
+    cycleDuration: cycleDuration,
+    cycleRR: cycleRR,
+    avgRR: train.avgRR
   });
 
   dom.badgeIeActual.textContent = `1 : ${achievedIeRatio.toFixed(1)}`;
@@ -1124,7 +1500,7 @@ function finalizeCurrentCycle() {
 }
 
 // ----------------------------------------------------------------------------
-// 右側 3 張實時指示卡渲染 (Indicator Cards)
+// 實時指示卡渲染 (Indicator Cards — 輕柔高對比配色)
 // ----------------------------------------------------------------------------
 function renderIndicatorCards(isShoulderRelaxed) {
   const m = AppState.currentMetrics;
@@ -1134,37 +1510,37 @@ function renderIndicatorCards(isShoulderRelaxed) {
   if (train.currentPhase === PHASES.INHALE) {
     if (m.lar <= THRESHOLDS.larInhaleMax) {
       dom.textPlbState.textContent = "閉口鼻吸 (達標)";
-      dom.textPlbState.className = "text-sm font-bold text-emerald-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
       dom.textPlbState.textContent = "吸氣張口 (需閉口)";
-      dom.textPlbState.className = "text-sm font-bold text-rose-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-rose-600";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm";
     }
   } else {
     const isPlb = (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax) &&
                   (m.mouthPucker >= THRESHOLDS.mouthPuckerMin || m.mouthFunnel >= THRESHOLDS.mouthFunnelMin);
     if (isPlb) {
       dom.textPlbState.textContent = "噘唇吹氣 (達標)";
-      dom.textPlbState.className = "text-sm font-bold text-emerald-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
       dom.textPlbState.textContent = "未形成噘唇吹氣";
-      dom.textPlbState.className = "text-sm font-bold text-amber-400";
-      dom.cardPlb.className = "p-3 md:p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between transition-all";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-amber-600";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between transition-all shadow-sm";
     }
   }
 
   dom.badgeShoulderDelta.textContent = `ΔY: ${m.deltaYShoulder >= 0 ? '+' : ''}${m.deltaYShoulder.toFixed(2)}`;
   if (isShoulderRelaxed) {
     dom.textShoulderState.textContent = "放鬆沉肩 (正常)";
-    dom.textShoulderState.className = "text-sm font-bold text-emerald-400";
-    dom.cardShoulder.className = "p-3 md:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between transition-all";
+    dom.textShoulderState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+    dom.cardShoulder.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
     dom.cardShoulder.classList.remove('shoulder-alert-active');
   } else {
     dom.textShoulderState.textContent = "偵測到聳肩代償";
-    dom.textShoulderState.className = "text-sm font-bold text-rose-400";
-    dom.cardShoulder.className = "p-3 md:p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500 flex items-center justify-between shoulder-alert-active transition-all";
+    dom.textShoulderState.className = "text-xs md:text-sm font-bold text-rose-600";
+    dom.cardShoulder.className = "p-3 rounded-2xl bg-rose-50 border border-rose-500 flex items-center justify-between shoulder-alert-active transition-all shadow-sm";
   }
 }
 
@@ -1173,6 +1549,7 @@ function renderIndicatorCards(isShoulderRelaxed) {
 // ----------------------------------------------------------------------------
 function renderTrainingCanvas(faceResults, poseResults) {
   const canvas = dom.trainCanvas;
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
@@ -1199,7 +1576,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
     if (AppState.calibration.yShoulderBase > 0) {
       const yBasePx = AppState.calibration.yShoulderBase * h;
       ctx.save();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 6]);
       ctx.beginPath();
@@ -1215,7 +1592,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
       ctx.strokeStyle = '#ef4444';
       ctx.setLineDash([8, 6]);
     } else {
-      ctx.strokeStyle = '#10b981';
+      ctx.strokeStyle = '#4DB6AC';
       ctx.setLineDash([]);
     }
 
@@ -1237,7 +1614,7 @@ function renderTrainingCanvas(faceResults, poseResults) {
     const face = faceResults.faceLandmarks[0];
 
     if (mode === 'privacy_mesh' || AppState.isDemoMode) {
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = '#4DB6AC';
       const ovalIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
       ovalIndices.forEach(idx => {
         if (face[idx]) {
@@ -1247,7 +1624,6 @@ function renderTrainingCanvas(faceResults, poseResults) {
         }
       });
 
-      // 雙眼外眼角特徵點 (33, 263)
       if (face[33] && face[263]) {
         ctx.fillStyle = '#94a3b8';
         ctx.beginPath();
@@ -1267,8 +1643,8 @@ function renderTrainingCanvas(faceResults, poseResults) {
     const isGoodPlb = AppState.training.currentPhase === PHASES.INHALE
       ? (m.lar <= THRESHOLDS.larInhaleMax)
       : (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax);
-    ctx.strokeStyle = isGoodPlb ? '#10b981' : '#f59e0b';
-    ctx.fillStyle = isGoodPlb ? 'rgba(16, 185, 129, 0.28)' : 'rgba(245, 158, 11, 0.28)';
+    ctx.strokeStyle = isGoodPlb ? '#4DB6AC' : '#FF7043';
+    ctx.fillStyle = isGoodPlb ? 'rgba(77, 182, 172, 0.28)' : 'rgba(255, 112, 67, 0.28)';
 
     ctx.beginPath();
     ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
@@ -1290,7 +1666,9 @@ function renderSummaryReport() {
   const totalSecs = Math.max(1, Math.round(train.elapsedSeconds));
   const completedCycles = train.cyclesHistory.length;
 
-  const meanRR = ((completedCycles / totalSecs) * 60).toFixed(1);
+  const meanRR = completedCycles > 0
+    ? ((completedCycles / totalSecs) * 60).toFixed(1)
+    : train.avgRR.toFixed(1);
 
   let sumIe = 0;
   train.cyclesHistory.forEach(c => sumIe += c.achievedIe);
@@ -1321,7 +1699,7 @@ function renderSummaryReport() {
   dom.sumShoulderAcc.textContent = `${shoulderAcc}%`;
   dom.sumGrade.textContent = gradeText;
 
-  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，評級為${gradeText}`);
+  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，平均呼吸頻率為每分鐘${meanRR}次，評級為${gradeText}`);
   loadAndRenderLocalHistory();
 }
 
@@ -1330,24 +1708,28 @@ function exportDeidentifiedCSV() {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const timeStr = now.toTimeString().slice(0, 8);
+  const meanRR = dom.sumRr ? dom.sumRr.textContent : train.avgRR.toFixed(1);
 
-  let csvContent = "data:text/csv;charset=utf-8,";
-  csvContent += "=== BreathGuide — 實時呼吸視覺生物反饋系統 匿名臨床數據報表 ===\n";
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+  csvContent += "=== 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;
   csvContent += `完成循環總數,${train.cyclesHistory.length}\n`;
+  csvContent += `平均呼吸頻率(次/分),${meanRR}\n`;
   csvContent += `設定目標吸呼比,1:${(AppState.exhaleTarget / AppState.inhaleTarget).toFixed(1)}\n\n`;
 
-  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比\n";
+  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比,單次週期呼吸頻率(次/分),累計平均呼吸頻率(次/分)\n";
   train.cyclesHistory.forEach(c => {
-    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)}\n`;
+    const cRR = c.cycleRR ? c.cycleRR.toFixed(1) : (60 / (AppState.inhaleTarget + AppState.exhaleTarget)).toFixed(1);
+    const aRR = c.avgRR ? c.avgRR.toFixed(1) : meanRR;
+    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)},${cRR},${aRR}\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `BreathGuide_Report_${dateStr}.csv`);
+  link.setAttribute("download", `SootheBreath_Report_${dateStr}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1356,13 +1738,19 @@ function exportDeidentifiedCSV() {
 
 function saveSessionToLocalStorage() {
   const train = AppState.training;
-  const historyKey = 'breathguide_history_v3';
-  const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
+  const historyKey = 'soothebreath_history_v4';
+  let existing = [];
+  try {
+    existing = JSON.parse(localStorage.getItem(historyKey) || localStorage.getItem('breathguide_history_v3') || '[]');
+  } catch (e) {
+    existing = [];
+  }
 
   const record = {
     date: new Date().toLocaleString('zh-HK'),
     duration: Math.round(train.elapsedSeconds),
     cycles: train.cyclesHistory.length,
+    meanRR: dom.sumRr ? dom.sumRr.textContent : train.avgRR.toFixed(1),
     plbAcc: dom.sumPlbAcc.textContent,
     shoulderAcc: dom.sumShoulderAcc.textContent,
     grade: dom.sumGrade.textContent
@@ -1370,31 +1758,40 @@ function saveSessionToLocalStorage() {
 
   existing.unshift(record);
   const trimmed = existing.slice(0, 10);
-  localStorage.setItem(historyKey, JSON.stringify(trimmed));
+  try {
+    localStorage.setItem(historyKey, JSON.stringify(trimmed));
+  } catch (e) {
+    console.warn("localStorage 寫入受限:", e);
+  }
   loadAndRenderLocalHistory();
   showToast("✅ 訓練紀錄已成功儲存至本機瀏覽器");
 }
 
 function loadAndRenderLocalHistory() {
   if (!dom.listHistory) return;
-  const historyKey = 'breathguide_history_v3';
-  const records = JSON.parse(localStorage.getItem(historyKey) || '[]');
+  let records = [];
+  try {
+    records = JSON.parse(localStorage.getItem('soothebreath_history_v4') || localStorage.getItem('breathguide_history_v3') || '[]');
+  } catch (e) {
+    records = [];
+  }
   
   if (records.length === 0) {
-    dom.listHistory.innerHTML = `<div class="text-slate-500 py-2 text-center">暫無本地歷史紀錄（完成訓練後可點擊上方儲存）</div>`;
+    dom.listHistory.innerHTML = `<div class="text-slate-400 py-2 text-center">暫無本地歷史紀錄（完成訓練後可點擊上方儲存）</div>`;
     return;
   }
 
   dom.listHistory.innerHTML = records.map((r, i) => `
-    <div class="flex justify-between items-center bg-slate-950/70 px-3 py-2 rounded-xl border border-slate-800/80">
+    <div class="flex flex-wrap justify-between items-center bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/80 gap-2">
       <div>
-        <span class="text-emerald-400 font-bold">#${records.length - i}</span>
-        <span class="text-slate-400 ml-2">${r.date}</span>
+        <span class="text-[#2E7D32] font-bold">#${records.length - i}</span>
+        <span class="text-slate-500 ml-2">${r.date}</span>
       </div>
-      <div class="space-x-3 text-right">
-        <span class="text-slate-300">${r.cycles} 週期</span>
-        <span class="text-teal-400">噘唇達標: ${r.plbAcc}</span>
-        <span class="text-emerald-300 font-bold">${r.grade}</span>
+      <div class="space-x-2.5 text-right">
+        <span class="text-slate-700 font-medium">${r.cycles} 週期</span>
+        ${r.meanRR ? `<span class="text-sky-700">RR: ${r.meanRR} 次/分</span>` : ''}
+        <span class="text-teal-700">噘唇: ${r.plbAcc}</span>
+        <span class="text-[#2E7D32] font-bold">${r.grade}</span>
       </div>
     </div>
   `).join('');
@@ -1412,6 +1809,7 @@ function updateDebugReadouts() {
   dom.dbgShoulder.textContent = m.deltaYShoulder.toFixed(3);
   dom.dbgDeye.textContent = m.dEye.toFixed(3);
   dom.dbgTilt.textContent = m.shoulderTilt.toFixed(3);
+  if (dom.dbgRr) dom.dbgRr.textContent = AppState.training.avgRR.toFixed(1) + " BPM";
 }
 
 function openDebugDrawer() {
@@ -1424,32 +1822,38 @@ function closeDebugDrawer() {
   if (dom.debugBackdrop) dom.debugBackdrop.classList.add('hidden');
 }
 
-function highlightActiveIeButton() {
+function updatePacingCalculationsUI() {
   const ratio = AppState.exhaleTarget / AppState.inhaleTarget;
+  const totalCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
+  const targetBpm = 60 / totalCycleSec;
+
   document.querySelectorAll('.btn-ie-quick').forEach(btn => {
     const btnIn = parseFloat(btn.dataset.in);
     const btnEx = parseFloat(btn.dataset.ex);
     const isMatch = Math.abs(AppState.inhaleTarget - btnIn) < 0.05 && Math.abs(AppState.exhaleTarget - btnEx) < 0.05;
     if (isMatch) {
-      btn.className = "btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm transition cursor-pointer";
+      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
     } else {
-      btn.className = "btn-ie-quick flex-1 py-1.5 rounded-xl text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer";
+      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
     }
   });
-  dom.labelIePreset.textContent = `目標 1 : ${ratio.toFixed(1)}`;
+
+  if (dom.labelIePreset) dom.labelIePreset.textContent = `目標 1 : ${ratio.toFixed(1)}`;
+  if (dom.valTargetBpm) dom.valTargetBpm.textContent = `${targetBpm.toFixed(1)} BPM (次/分)`;
+  if (dom.valCycleTotal) dom.valCycleTotal.textContent = `單次循環總長: ${totalCycleSec.toFixed(1)} 秒 (吸 ${AppState.inhaleTarget.toFixed(1)}s / 呼 ${AppState.exhaleTarget.toFixed(1)}s)`;
 }
 
 function setupEventListeners() {
   dom.inputInhale.addEventListener('input', (e) => {
     AppState.inhaleTarget = parseFloat(e.target.value);
     dom.valInhale.textContent = `${AppState.inhaleTarget.toFixed(1)} 秒`;
-    highlightActiveIeButton();
+    updatePacingCalculationsUI();
   });
 
   dom.inputExhale.addEventListener('input', (e) => {
     AppState.exhaleTarget = parseFloat(e.target.value);
     dom.valExhale.textContent = `${AppState.exhaleTarget.toFixed(1)} 秒`;
-    highlightActiveIeButton();
+    updatePacingCalculationsUI();
   });
 
   document.querySelectorAll('.btn-ie-quick').forEach(btn => {
@@ -1462,11 +1866,12 @@ function setupEventListeners() {
       dom.inputExhale.value = exVal;
       dom.valInhale.textContent = `${inVal.toFixed(1)} 秒`;
       dom.valExhale.textContent = `${exVal.toFixed(1)} 秒`;
-      highlightActiveIeButton();
-      showToast(`⏱️ 已切換吸呼比為 1 : ${(exVal / inVal).toFixed(0)}（吸氣 ${inVal}s / 呼氣 ${exVal}s）`);
+      updatePacingCalculationsUI();
+      showToast(`⏱️ 已切換吸呼比為 1 : ${(exVal / inVal).toFixed(0)}（目標頻率 ${(60 / (inVal + exVal)).toFixed(1)} BPM）`);
     });
   });
 
+  // 視覺私隱模式選擇
   dom.selectPrivacy.addEventListener('change', (e) => {
     AppState.privacyMode = e.target.value;
     applyPrivacyModeStyles();
@@ -1491,22 +1896,82 @@ function setupEventListeners() {
     });
   }
 
+  // 真人模式與性別切換 (STATE_IDLE 與 STATE_TRAINING)
+  if (dom.btnPacerBalloon) {
+    dom.btnPacerBalloon.addEventListener('click', () => {
+      AppState.displayMode = 'balloon';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnPacerHuman) {
+    dom.btnPacerHuman.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnGenderMale) {
+    dom.btnGenderMale.addEventListener('click', () => {
+      AppState.humanGender = 'male';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnGenderFemale) {
+    dom.btnGenderFemale.addEventListener('click', () => {
+      AppState.humanGender = 'female';
+      applyDisplayModeStyles();
+    });
+  }
+
+  // 訓練中快速切換氣球 / 男示範 / 女示範
+  if (dom.btnTrainBalloon) {
+    dom.btnTrainBalloon.addEventListener('click', () => {
+      AppState.displayMode = 'balloon';
+      applyDisplayModeStyles();
+      showToast("🎈 已切換至氣球節奏球模式");
+    });
+  }
+  if (dom.btnTrainMale) {
+    dom.btnTrainMale.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      AppState.humanGender = 'male';
+      applyDisplayModeStyles();
+      showToast("👨 已切換至真人示範（男性：1=男吸 / 2=男呼）");
+    });
+  }
+  if (dom.btnTrainFemale) {
+    dom.btnTrainFemale.addEventListener('click', () => {
+      AppState.displayMode = 'human';
+      AppState.humanGender = 'female';
+      applyDisplayModeStyles();
+      showToast("👩 已切換至真人示範（女性：3=女吸 / 4=女呼）");
+    });
+  }
+
   dom.selectDuration.addEventListener('change', (e) => {
     AppState.totalDuration = parseInt(e.target.value, 10);
   });
 
   dom.toggleVoice.addEventListener('change', (e) => {
     AppState.voiceEnabled = e.target.checked;
+    syncVoiceUI();
     showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
   });
 
-  // 啟動真實相機訓練
+  if (dom.btnHeaderVoice) {
+    dom.btnHeaderVoice.addEventListener('click', () => {
+      AppState.voiceEnabled = !AppState.voiceEnabled;
+      syncVoiceUI();
+      showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
+    });
+  }
+
+  // 啟動真實相機訓練 -> 進入 10 秒校準
   dom.btnStart.addEventListener('click', () => {
     AppState.isDemoMode = false;
     switchViewState(STATES.CALIBRATING);
   });
 
-  // 啟動免鏡頭模擬預覽訓練
+  // 啟動免鏡頭模擬預覽訓練 -> 進入 10 秒校準
   if (dom.btnStartDemo) {
     dom.btnStartDemo.addEventListener('click', () => {
       AppState.isDemoMode = true;
@@ -1515,9 +1980,37 @@ function setupEventListeners() {
     });
   }
 
+  // 校準畫面取消返回設定
   if (dom.btnCancelCalib) {
     dom.btnCancelCalib.addEventListener('click', () => {
       switchViewState(STATES.IDLE);
+    });
+  }
+
+  // Requirement 4: 10秒校準結束後的確認畫面三顆按鈕
+  if (dom.btnConfirmStart) {
+    dom.btnConfirmStart.addEventListener('click', () => {
+      speakText("現在開始呼吸訓練", true);
+      switchViewState(STATES.TRAINING);
+    });
+  }
+  if (dom.btnRecalibrate) {
+    dom.btnRecalibrate.addEventListener('click', () => {
+      showToast("🔄 重新進行 10 秒基準校準");
+      runCalibrationSequence();
+    });
+  }
+  if (dom.btnAdjustSettings) {
+    dom.btnAdjustSettings.addEventListener('click', () => {
+      switchViewState(STATES.IDLE);
+    });
+  }
+
+  // Requirement 5: TRAINING 右上角「🔄 重校準」按鈕，隨時可回 CALIBRATING
+  if (dom.btnTrainRecalibrate) {
+    dom.btnTrainRecalibrate.addEventListener('click', () => {
+      showToast("🔄 返回 10 秒基準校準畫面");
+      switchViewState(STATES.CALIBRATING);
     });
   }
 
@@ -1532,6 +2025,7 @@ function setupEventListeners() {
         const pausedDuration = performance.now() - AppState.pauseStartTime;
         AppState.training.startTime += pausedDuration;
         AppState.training.phaseStartTime += pausedDuration;
+        AppState.training.cycleStartTime += pausedDuration;
         AppState.isPaused = false;
         dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
         showToast("▶️ 訓練繼續");
@@ -1552,7 +2046,10 @@ function setupEventListeners() {
   dom.btnSaveLocal.addEventListener('click', saveSessionToLocalStorage);
 
   dom.btnClearHistory.addEventListener('click', () => {
-    localStorage.removeItem('breathguide_history_v3');
+    try {
+      localStorage.removeItem('soothebreath_history_v4');
+      localStorage.removeItem('breathguide_history_v3');
+    } catch (e) {}
     loadAndRenderLocalHistory();
     showToast("🗑️ 已清空本機歷史紀錄");
   });
@@ -1632,12 +2129,14 @@ function setupEventListeners() {
 // 11. 程式啟動入口 (Immediate Safe Bootstrapping)
 // ============================================================================
 function bootstrapApp() {
-  if (window.__breathGuideBootstrapped) return;
-  window.__breathGuideBootstrapped = true;
+  if (window.__sootheBreathBootstrapped) return;
+  window.__sootheBreathBootstrapped = true;
 
   cacheDomElements();
   setupEventListeners();
-  highlightActiveIeButton();
+  updatePacingCalculationsUI();
+  applyDisplayModeStyles();
+  syncVoiceUI();
   initTTS();
   loadAndRenderLocalHistory();
   initMediaPipeVision();
