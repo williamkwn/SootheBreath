@@ -1,8 +1,10 @@
 /**
- * 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (PWA)
- * ESM Core Engine v4.0: MediaPipe Tasks Vision 0.10.14, 10s Calibration + Confirmation,
- * Human Mode (1.jpg-4.jpg), Centered Pacer Mode, Real-Time Average RR, Math & Feedback
- * 嚴格保留全部臨床偵測邏輯與預設 THRESHOLDS
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v4.0)
+ * ESM Core Engine: MediaPipe Tasks Vision 0.10.14, 10s Calibration + Confirmation,
+ * 1. 起肩代償演算法升級 (EMA 座標平滑 alpha=0.35 + 軀幹/耳肩相對基準定位 Torso Anchoring)
+ * 2. 鼻口呼吸 (PLB) 吸氣雙重聯合判定 (LAR <= 0.06 且 jawOpen < 0.05)
+ * 3. 呼氣階段 70% 彈性容錯與柔性過渡 (Exhalation Soft Transition)
+ * 4. 雙重呼吸導引模式 (氣球節奏球 + 真人示範 男性/女性) 及廣東話 (zh-HK) 預設語音導航
  */
 
 // ============================================================================
@@ -20,25 +22,47 @@ const PHASES = {
   EXHALE: 'EXHALE'
 };
 
-// 預設臨床閾值 (Default Clinical Thresholds — 嚴格保持不變)
+// 預設臨床閾值 (Default Clinical Thresholds — PRD v4.0 升級版)
 const THRESHOLDS = {
-  larInhaleMax: 0.06,
-  larInhaleErr: 0.08,
-  larExhaleMin: 0.04,
-  larExhaleMax: 0.24,
-  larExhaleWideErr: 0.26,
-  larExhaleClosedErr: 0.03,
-  mouthPuckerMin: 0.40,
-  mouthFunnelMin: 0.35,
+  larInhaleMax: 0.06,          // 吸氣閉口鼻吸 LAR 上限 (LAR <= 0.06)
+  jawOpenInhaleMax: 0.05,      // 吸氣雙重聯合判定：下頜微張上限 (jawOpen < 0.05)
+  larInhaleErr: 0.08,          // 吸氣張口明顯錯誤閾值
+  larExhaleMin: 0.04,          // 呼氣噘唇 LAR 下限 (0.04 <= LAR <= 0.24)
+  larExhaleMax: 0.24,          // 呼氣噘唇 LAR 上限
+  larExhaleWideErr: 0.26,      // 呼氣張大口錯誤閾值
+  larExhaleClosedErr: 0.03,    // 呼氣完全閉口錯誤閾值
+  mouthPuckerMin: 0.40,        // 呼氣噘唇 mouthPucker 下限 (>= 0.40)
+  mouthFunnelMin: 0.35,        // 呼氣漏斗狀 mouthFunnel 下限 (>= 0.35)
   puckerWideErrMax: 0.30,
-  puckerClosedErrMax: 0.25,
-  shoulderHikeWarn: 0.12,
-  shoulderHikeNormal: 0.10,
-  shoulderTiltMax: 0.15,
-  earlyExhaleRatio: 0.70
+  puckerClosedErrMax: 0.25,    // 呼氣自然放鬆唇形閾值 (mouthPucker < 0.25)
+  shoulderHikeWarn: 0.12,      // 耳肩相對間距縮短聳肩代償警示 (Delta_Y_relative > 0.12)
+  shoulderHikeNormal: 0.10,    // 正常沉肩範圍 (Delta_Y_relative <= 0.10)
+  shoulderTiltMax: 0.15,       // 雙肩左右傾斜度上限
+  earlyExhaleRatio: 0.70,      // 呼氣階段 70% 動態完成柔性過渡門檻 (phaseElapsed >= T_exhale_target * 0.70)
+  emaAlpha: 0.35               // 雙肩座標 EMA 指數移動平均平滑係數 (alpha = 0.35)
 };
 
-// 真人模式圖片路徑映射 (1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+// 互動模式視訊路徑映射 (蒲公英 Dandelion.mp4 / 風車 Pinwheel.mp4)
+const INTERACTIVE_VIDEOS = {
+  dandelion: {
+    src: 'Dandelion.mp4',
+    title: '蒲公英 (Dandelion)',
+    idleStart: 0.0,
+    idleEnd: 2.85,
+    blowStart: 3.0,
+    blowEnd: 8.85
+  },
+  pinwheel: {
+    src: 'Pinwheel.mp4',
+    title: '風車 (Pinwheel)',
+    idleStart: 0.0,
+    idleEnd: 2.15,
+    blowStart: 3.0,
+    blowEnd: 8.50
+  }
+};
+
+// 真人示範模式圖片路徑映射 (男性 / 女性)
 const HUMAN_IMAGES = {
   male: {
     inhale: (window.__SOOTHE_IMAGES && window.__SOOTHE_IMAGES['1.jpg']) || '1.jpg',
@@ -72,23 +96,37 @@ const AppState = {
   lastPoseResult: null,
   calibTimerId: null,
   isCalibConfirming: false,
-  
-  // 使用者設定
-  inhaleTarget: 2.0,          // 秒
-  exhaleTarget: 4.0,          // 秒
-  totalDuration: 120,         // 秒
-  privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist'
-  displayMode: 'balloon',     // 'balloon' | 'human'
-  humanGender: 'male',        // 'male' | 'female'
-  voiceEnabled: true,
-  
-  // 10秒基準校準結果 (前7秒收集基準，後3秒確認位置)
+
+  // 使用者設定 (僅設定 BPM [20 至 5]、吸呼比 [1:2 或 1:3]、訓練總時長 [1-10 分鐘滑桿])
+  targetBpm: 10,               // 目標呼吸頻率 BPM (範圍 20 至 5，預設 10 BPM)
+  ieRatio: 2,                  // 目標吸呼比 1:2 或 1:3 (值為 2 或 3，不包含 1:4)
+  inhaleTarget: 2.0,           // 由 BPM 與吸呼比自動計算：60 / BPM / (1 + ieRatio)
+  exhaleTarget: 4.0,           // 由 BPM 與吸呼比自動計算：inhaleTarget * ieRatio
+  totalDuration: 120,          // 訓練總時長秒數 (1 至 10 分鐘滑桿，預設 2 分鐘 = 120 秒)
+  privacyMode: 'privacy_mesh', // 'mirror' (實時鏡像模式 Mirror mode) | 'privacy_mesh' (去識別化骨架網格模式 privacy mesh mode) | 'minimalist' (純引導模式 pure guiding mode)
+  displayMode: 'balloon',      // 'balloon' | 'human' | 'interactive'
+  humanGender: 'male',         // 'male' (男性) | 'female' (女性)
+  interactiveTheme: 'dandelion', // 'dandelion' (蒲公英) | 'pinwheel' (風車)
+  bgmEnabled: true,            // 療癒背景音樂 (BGM) 預設開啟
+  sfxEnabled: true,            // 互動吹氣音效 (風車/蒲公英 SFX) 預設開啟
+  voiceEnabled: true,          // 廣東話 (zh-HK) 語音導航口令：預設開啟 (Default ON)
+
+  // EMA 平滑濾波狀態器 (針對 Pose Landmark 11 左肩, 12 右肩)
+  ema: {
+    initialized: false,
+    y11Prev: 0,
+    y12Prev: 0
+  },
+
+  // 10秒基準校準結果 (前7秒收集基準 Dist_base，後3秒確認位置)
   calibration: {
     dEyeBase: 0.22,
-    yShoulderBase: 0.68,
+    distBase: 0.30,            // 10秒校準階段記錄之耳肩垂直相對基準間距 Dist_base
+    yShoulderBase: 0.68,       // 畫布參考水平線位置
     larRest: 0.04,
     samplesCount: 0,
     sumDEye: 0,
+    sumDistEarShoulder: 0,
     sumYShoulder: 0,
     sumLar: 0,
     elapsedCalibSec: 0
@@ -98,10 +136,15 @@ const AppState = {
   currentMetrics: {
     dEye: 0.22,
     lar: 0.04,
+    jawOpen: 0.01,             // Face Blendshapes: jawOpen
     mouthPucker: 0.10,
     mouthFunnel: 0.10,
+    y11Smooth: 0.68,
+    y12Smooth: 0.68,
     yShoulderCurr: 0.68,
-    deltaYShoulder: 0.01,
+    distCurr: 0.30,            // 當前耳肩垂直相對間距 Dist_curr
+    deltaYRelative: 0.00,      // (Dist_base - Dist_curr) / D_eye
+    deltaYShoulder: 0.00,      // 與 deltaYRelative 同步
     shoulderTilt: 0.02,
     hasFace: false,
     hasPose: false
@@ -110,19 +153,25 @@ const AppState = {
   // 訓練過程狀態機
   training: {
     startTime: 0,
+    lastFrameTime: 0,
     elapsedSeconds: 0,
     currentPhase: PHASES.INHALE,
     phaseStartTime: 0,
     cycleStartTime: 0,
     cycleIndex: 0,
-    
+
+    // 呼氣 70% 柔性過渡狀態
+    isSoftTransitioning: false,
+    softTransitionStartTime: 0,
+    softTransitionStartScale: 1.0,
+
     // 當前週期累計有效時間
     tInActual: 0,
     tExActual: 0,
-    
+
     // 實時平均呼吸頻率 (Average Respiratory Rate, breaths/min)
     avgRR: 10.0,
-    
+
     // 全程統計指標
     cyclesHistory: [],
     totalInhaleFrames: 0,
@@ -167,25 +216,31 @@ function cacheDomElements() {
     toast: document.getElementById('toast-notification'),
     toastText: document.getElementById('toast-text'),
 
-    // 頂部導航欄按鈕
-    btnHeaderVoice: document.getElementById('btn-header-voice'),
-
-    // 設定控制器 (STATE_IDLE)
-    inputInhale: document.getElementById('input-inhale-time'),
-    inputExhale: document.getElementById('input-exhale-time'),
-    valInhale: document.getElementById('val-inhale-time'),
-    valExhale: document.getElementById('val-exhale-time'),
-    labelIePreset: document.getElementById('label-ie-preset'),
+    // 設定面板 1：目標吸呼時間與呼吸頻率 (STATE_IDLE)
+    inputBpm: document.getElementById('input-bpm'),
     valTargetBpm: document.getElementById('val-target-bpm'),
+    btnRatio12: document.getElementById('btn-ratio-1-2'),
+    btnRatio13: document.getElementById('btn-ratio-1-3'),
+    labelIePreset: document.getElementById('label-ie-preset'),
+    valInhaleCalc: document.getElementById('val-inhale-calc'),
+    valExhaleCalc: document.getElementById('val-exhale-calc'),
     valCycleTotal: document.getElementById('val-cycle-total'),
+    inputDuration: document.getElementById('input-duration'),
+    valDurationMins: document.getElementById('val-duration-mins'),
+
+    // 設定面板 2：顯示模式 (STATE_IDLE)
     selectPrivacy: document.getElementById('select-privacy-mode'),
-    selectDuration: document.getElementById('select-duration'),
-    toggleVoice: document.getElementById('toggle-voice'),
     btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
     btnPacerHuman: document.getElementById('btn-pacer-human'),
+    btnPacerInteractive: document.getElementById('btn-pacer-interactive'),
     wrapperHumanGender: document.getElementById('wrapper-human-gender'),
     btnGenderMale: document.getElementById('btn-gender-male'),
     btnGenderFemale: document.getElementById('btn-gender-female'),
+    wrapperInteractiveTheme: document.getElementById('wrapper-interactive-theme'),
+    btnThemeDandelion: document.getElementById('btn-theme-dandelion'),
+    btnThemePinwheel: document.getElementById('btn-theme-pinwheel'),
+    toggleBgm: document.getElementById('toggle-bgm'),
+    toggleSfx: document.getElementById('toggle-sfx'),
     btnStart: document.getElementById('btn-start'),
     btnStartDemo: document.getElementById('btn-start-demo'),
 
@@ -224,6 +279,9 @@ function cacheDomElements() {
     btnTrainBalloon: document.getElementById('btn-train-balloon'),
     btnTrainMale: document.getElementById('btn-train-male'),
     btnTrainFemale: document.getElementById('btn-train-female'),
+    btnTrainDandelion: document.getElementById('btn-train-dandelion'),
+    btnTrainPinwheel: document.getElementById('btn-train-pinwheel'),
+    btnTrainBgm: document.getElementById('btn-train-bgm'),
     btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
 
     // 呼吸節奏球與真人示範元件
@@ -238,9 +296,15 @@ function cacheDomElements() {
     imgHumanExhale: document.getElementById('img-human-exhale'),
     humanActionText: document.getElementById('human-action-text'),
     humanSecondsText: document.getElementById('human-seconds-text'),
+    interactiveDemoWrapper: document.getElementById('interactive-demo-wrapper'),
+    interactiveVideoBox: document.getElementById('interactive-video-box'),
+    interactiveVideo: document.getElementById('interactive-video'),
+    badgeInteractiveState: document.getElementById('badge-interactive-state'),
+    interactiveActionText: document.getElementById('interactive-action-text'),
+    interactiveSecondsText: document.getElementById('interactive-seconds-text'),
     pacerPhaseHint: document.getElementById('pacer-phase-hint'),
 
-    // 四張實時生物反饋指示卡 (含新增平均呼吸頻率卡)
+    // 四張實時生物反饋指示卡
     biofeedbackCardsGrid: document.getElementById('biofeedback-cards-grid'),
     cardPlb: document.getElementById('card-status-plb'),
     textPlbState: document.getElementById('text-plb-state'),
@@ -279,14 +343,18 @@ function cacheDomElements() {
     debugDrawer: document.getElementById('debug-drawer'),
     debugBackdrop: document.getElementById('debug-backdrop'),
     dbgLar: document.getElementById('dbg-val-lar'),
+    dbgJaw: document.getElementById('dbg-val-jaw'),
     dbgPucker: document.getElementById('dbg-val-pucker'),
     dbgFunnel: document.getElementById('dbg-val-funnel'),
     dbgShoulder: document.getElementById('dbg-val-shoulder'),
+    dbgDistEs: document.getElementById('dbg-val-dist-es'),
     dbgDeye: document.getElementById('dbg-val-deye'),
     dbgTilt: document.getElementById('dbg-val-tilt'),
     dbgRr: document.getElementById('dbg-val-rr'),
     dbgRangeLarInMax: document.getElementById('dbg-range-lar-in-max'),
     dbgLblLarInMax: document.getElementById('dbg-lbl-lar-in-max'),
+    dbgRangeJawInMax: document.getElementById('dbg-range-jaw-in-max'),
+    dbgLblJawInMax: document.getElementById('dbg-lbl-jaw-in-max'),
     dbgRangePuckerMin: document.getElementById('dbg-range-pucker-min'),
     dbgLblPuckerMin: document.getElementById('dbg-lbl-pucker-min'),
     dbgRangeFunnelMin: document.getElementById('dbg-range-funnel-min'),
@@ -435,7 +503,6 @@ async function startCamera(videoElement) {
   };
 
   try {
-    // 若已有運行中的視訊串流且有效，直接複用避免重複請求閃爍
     if (AppState.stream && AppState.stream.active) {
       videoElement.srcObject = AppState.stream;
       await videoElement.play().catch(() => {});
@@ -449,7 +516,7 @@ async function startCamera(videoElement) {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     AppState.stream = stream;
     videoElement.srcObject = stream;
-    
+
     await new Promise((resolve) => {
       videoElement.onloadedmetadata = () => {
         videoElement.play().then(resolve).catch(resolve);
@@ -534,7 +601,7 @@ function showCameraDiagnosticError(error) {
 }
 
 // ============================================================================
-// 5. 核心電腦視覺運算公式 (Section 3 Math & Algorithms — 嚴格保留全部臨床邏輯)
+// 5. 核心電腦視覺運算公式 (Section 3 Math & Upgraded Clinical Algorithms)
 // ============================================================================
 
 /**
@@ -559,49 +626,117 @@ function calculateLAR(faceLandmarks) {
 
   const lipHeight = Math.hypot(p13.x - p14.x, p13.y - p14.y);
   const lipWidth = Math.hypot(p78.x - p308.x, p78.y - p308.y);
-  
+
   if (lipWidth === 0) return 0;
   return lipHeight / lipWidth;
 }
 
 /**
  * 提取 MediaPipe Face Blendshapes 分數
- * mouthPucker (噘唇/嘟嘴) 與 mouthFunnel (漏斗狀微張)
+ * 包含 mouthPucker (噘唇)、mouthFunnel (漏斗狀微張) 及 jawOpen (下頜張開分數)
  */
 function extractBlendshapes(blendshapesList) {
   let mouthPucker = 0;
   let mouthFunnel = 0;
+  let jawOpen = 0;
 
   if (blendshapesList && blendshapesList[0] && blendshapesList[0].categories) {
     const cats = blendshapesList[0].categories;
     for (let i = 0; i < cats.length; i++) {
-      if (cats[i].categoryName === 'mouthPucker') {
+      const name = cats[i].categoryName;
+      if (name === 'mouthPucker') {
         mouthPucker = cats[i].score;
-      } else if (cats[i].categoryName === 'mouthFunnel') {
+      } else if (name === 'mouthFunnel') {
         mouthFunnel = cats[i].score;
+      } else if (name === 'jawOpen') {
+        jawOpen = cats[i].score;
       }
     }
   }
 
-  return { mouthPucker, mouthFunnel };
+  return { mouthPucker, mouthFunnel, jawOpen };
 }
 
 /**
- * 標準化雙肩垂直上升量與傾斜度 (Shoulder Hike Proxy)
- * Pose Landmarks 左肩 11、右肩 12
+ * 【改進一：EMA 座標平滑處理】
+ * 對 MediaPipe Pose 提取的雙肩座標（Landmark 11 左肩, 12 右肩）套用指數移動平均濾波：
+ * Y_smooth = alpha * Y_curr + (1 - alpha) * Y_prev（預設 alpha = 0.35）
  */
-function calculateShoulderMetrics(poseLandmarks, dEye, yShoulderBase) {
-  const p11 = poseLandmarks[11];
-  const p12 = poseLandmarks[12];
+function smoothShoulderLandmarksEMA(poseLandmarks, alpha = THRESHOLDS.emaAlpha) {
+  const y11Curr = poseLandmarks[11].y;
+  const y12Curr = poseLandmarks[12].y;
 
-  const yShoulderCurr = (p11.y + p12.y) / 2;
+  if (!AppState.ema.initialized) {
+    AppState.ema.y11Prev = y11Curr;
+    AppState.ema.y12Prev = y12Curr;
+    AppState.ema.initialized = true;
+  } else {
+    AppState.ema.y11Prev = alpha * y11Curr + (1 - alpha) * AppState.ema.y11Prev;
+    AppState.ema.y12Prev = alpha * y12Curr + (1 - alpha) * AppState.ema.y12Prev;
+  }
+
+  const y11Smooth = AppState.ema.y11Prev;
+  const y12Smooth = AppState.ema.y12Prev;
+  const yShoulderSmooth = (y11Smooth + y12Smooth) / 2;
+
+  return { y11Smooth, y12Smooth, yShoulderSmooth };
+}
+
+/**
+ * 【改進一：軀幹/耳肩相對基準定位 (Torso Anchoring)】
+ * 計算雙肩相對於頭部/耳部（Pose Landmark 7 左耳、8 右耳）的垂直相對間距：
+ * Dist_ear_shoulder = ((pose[11].y - pose[7].y) + (pose[12].y - pose[8].y)) / 2
+ * 並即時監控雙肩相對上升/縮頸量：
+ * Delta_Y_relative = (Dist_base - Dist_curr) / D_eye
+ */
+function calculateEarShoulderDistance(poseLandmarks, y11Smooth, y12Smooth) {
+  const shoulderLeftY = (typeof y11Smooth === 'number') ? y11Smooth : poseLandmarks[11].y;
+  const shoulderRightY = (typeof y12Smooth === 'number') ? y12Smooth : poseLandmarks[12].y;
+  const earLeftY = poseLandmarks[7] ? poseLandmarks[7].y : (shoulderLeftY - 0.25);
+  const earRightY = poseLandmarks[8] ? poseLandmarks[8].y : (shoulderRightY - 0.25);
+
+  // Dist_ear_shoulder = ((pose[11].y - pose[7].y) + (pose[12].y - pose[8].y)) / 2
+  return ((shoulderLeftY - earLeftY) + (shoulderRightY - earRightY)) / 2;
+}
+
+function calculateShoulderMetrics(poseLandmarks, dEye, distBase) {
+  const { y11Smooth, y12Smooth, yShoulderSmooth } = smoothShoulderLandmarksEMA(poseLandmarks, THRESHOLDS.emaAlpha);
+  const distCurr = calculateEarShoulderDistance(poseLandmarks, y11Smooth, y12Smooth);
   const dEyeSafe = Math.max(dEye, 0.05);
 
-  // 頂部 Y 為 0，聳肩時 yShoulderCurr 變小，Delta_Y 為正數
-  const deltaYShoulder = (yShoulderBase - yShoulderCurr) / dEyeSafe;
-  const shoulderTilt = Math.abs(p11.y - p12.y) / dEyeSafe;
+  // 聳肩或縮頸時耳肩距離縮短 (Dist_curr < Dist_base)，Delta_Y_relative 為正值
+  const deltaYRelative = (distBase - distCurr) / dEyeSafe;
+  const shoulderTilt = Math.abs(y11Smooth - y12Smooth) / dEyeSafe;
 
-  return { yShoulderCurr, deltaYShoulder, shoulderTilt };
+  return {
+    y11Smooth,
+    y12Smooth,
+    yShoulderCurr: yShoulderSmooth,
+    distCurr,
+    deltaYRelative,
+    deltaYShoulder: deltaYRelative,
+    shoulderTilt
+  };
+}
+
+/**
+ * 【改進二：「鼻口呼吸 (PLB)」吸氣雙重聯合判定】
+ * 吸氣階段（閉口鼻吸）必須同時滿足 LAR <= 0.06 且 faceBlendshapes.jawOpen < 0.05
+ */
+function isNasalInhaleValid(lar, jawOpen) {
+  return (lar <= THRESHOLDS.larInhaleMax) && (jawOpen < THRESHOLDS.jawOpenInhaleMax);
+}
+
+/**
+ * 呼氣階段（噘唇吹氣）維持原 PRD 判定：
+ * 0.04 <= LAR <= 0.24 且 (mouthPucker >= 0.40 或 mouthFunnel >= 0.35)
+ */
+function isPlbExhaleValid(lar, mouthPucker, mouthFunnel) {
+  return (
+    lar >= THRESHOLDS.larExhaleMin &&
+    lar <= THRESHOLDS.larExhaleMax &&
+    (mouthPucker >= THRESHOLDS.mouthPuckerMin || mouthFunnel >= THRESHOLDS.mouthFunnelMin)
+  );
 }
 
 /**
@@ -615,6 +750,7 @@ function generateSimulatedDetections(now) {
   const lar = isExhale ? (0.11 + wave * 0.02) : (0.03 + Math.abs(wave) * 0.01);
   const pucker = isExhale ? (0.58 + wave * 0.08) : 0.08;
   const funnel = isExhale ? (0.48 + wave * 0.06) : 0.06;
+  const jawOpen = isExhale ? 0.06 : 0.015;
 
   const face = [];
   for (let i = 0; i < 468; i++) {
@@ -640,9 +776,11 @@ function generateSimulatedDetections(now) {
   for (let i = 0; i < 33; i++) {
     pose.push({ x: 0.5, y: 0.7, z: 0 });
   }
-  const breathShift = isExhale ? 0.003 : -0.004;
-  pose[11] = { x: 0.30, y: 0.72 + breathShift };
-  pose[12] = { x: 0.70, y: 0.72 + breathShift };
+  const breathShift = isExhale ? 0.002 : -0.002;
+  pose[7] = { x: 0.42, y: 0.42 };  // 左耳 Landmark 7
+  pose[8] = { x: 0.58, y: 0.42 };  // 右耳 Landmark 8
+  pose[11] = { x: 0.30, y: 0.72 + breathShift }; // 左肩 Landmark 11
+  pose[12] = { x: 0.70, y: 0.72 + breathShift }; // 右肩 Landmark 12
 
   return {
     faceResult: {
@@ -650,7 +788,8 @@ function generateSimulatedDetections(now) {
       faceBlendshapes: [{
         categories: [
           { categoryName: 'mouthPucker', score: pucker },
-          { categoryName: 'mouthFunnel', score: funnel }
+          { categoryName: 'mouthFunnel', score: funnel },
+          { categoryName: 'jawOpen', score: jawOpen }
         ]
       }]
     },
@@ -661,9 +800,10 @@ function generateSimulatedDetections(now) {
 }
 
 // ============================================================================
-// 6. 廣東話語音合成導航 (Section 4 Cantonese TTS)
+// 6. 廣東話語音合成導航 (Section 4 Cantonese TTS — 預設開啟)
 // ============================================================================
 function initTTS() {
+  AppState.voiceEnabled = true; // 廣東話 (zh-HK) 語音導航口令預設開啟
   if (!('speechSynthesis' in window)) {
     console.warn("本瀏覽器不支援 Web Speech API");
     return;
@@ -671,7 +811,7 @@ function initTTS() {
 
   const loadVoices = () => {
     const voices = window.speechSynthesis.getVoices();
-    AppState.tts.speechSynthesisVoice = 
+    AppState.tts.speechSynthesisVoice =
       voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-Hant-HK') ||
       voices.find(v => v.lang.includes('HK') || v.lang.includes('yue')) ||
       voices.find(v => v.lang === 'zh-TW') ||
@@ -706,14 +846,258 @@ function speakText(text, isPhaseSwitch = false) {
   }
 }
 
-function syncVoiceUI() {
-  if (dom.toggleVoice) {
-    dom.toggleVoice.checked = AppState.voiceEnabled;
+
+// ============================================================================
+// 6B. 互動模式 MP4 視訊狀態機與 Web Audio 療癒背景音樂 / 吹氣音效引擎
+// ============================================================================
+const SoundscapeEngine = {
+  ctx: null,
+  isRunning: false,
+  bgmGain: null,
+  bgmTimer: null,
+  sfxGain: null,
+  windFilter: null,
+  windSource: null,
+  chimeTimer: null,
+  currentIntensity: 0,
+  chordIndex: 0,
+
+  init() {
+    if (this.ctx) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    this.ctx = new AudioCtx();
+
+    // 1. 建立持續柔和背景音樂 (BGM) 主音量節點
+    this.bgmGain = this.ctx.createGain();
+    this.bgmGain.gain.value = AppState.bgmEnabled ? 0.12 : 0.0;
+    this.bgmGain.connect(this.ctx.destination);
+
+    // 2. 建立互動吹氣音效 (SFX: 風車轉動微風聲 / 蒲公英吹散輕拂聲) 合成節點
+    this.sfxGain = this.ctx.createGain();
+    this.sfxGain.gain.value = 0.0;
+
+    this.windFilter = this.ctx.createBiquadFilter();
+    this.windFilter.type = 'bandpass';
+    this.windFilter.frequency.value = 420;
+    this.windFilter.Q.value = 2.2;
+
+    // 產生 3 秒循環粉紅/白噪音緩衝區模擬自然柔和吹氣風聲
+    const bufferSize = this.ctx.sampleRate * 3;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.04;
+      b6 = white * 0.115926;
+    }
+
+    this.windSource = this.ctx.createBufferSource();
+    this.windSource.buffer = noiseBuffer;
+    this.windSource.loop = true;
+    this.windSource.connect(this.windFilter);
+    this.windFilter.connect(this.sfxGain);
+    this.sfxGain.connect(this.ctx.destination);
+    this.windSource.start(0);
+  },
+
+  startBGM() {
+    this.init();
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    this.updateBgmMuteState();
+    if (this.isRunning) return;
+    this.isRunning = true;
+
+    // 療癒五聲音階和弦序列 (Fmaj7 -> Cmaj7 -> Dm7 -> Am7)
+    const chords = [
+      [174.61, 220.00, 261.63, 329.63],
+      [130.81, 196.00, 246.94, 329.63],
+      [146.83, 220.00, 261.63, 349.23],
+      [220.00, 261.63, 329.63, 392.00]
+    ];
+
+    const playAmbientChord = () => {
+      if (!this.isRunning || !this.ctx || !AppState.bgmEnabled) return;
+      const now = this.ctx.currentTime;
+      const notes = chords[this.chordIndex % chords.length];
+      this.chordIndex++;
+
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const noteGain = this.ctx.createGain();
+        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+
+        noteGain.gain.setValueAtTime(0.001, now);
+        noteGain.gain.linearRampToValueAtTime(0.08 / notes.length, now + 1.8);
+        noteGain.gain.exponentialRampToValueAtTime(0.001, now + 4.6);
+
+        osc.connect(noteGain);
+        noteGain.connect(this.bgmGain);
+        osc.start(now);
+        osc.stop(now + 4.7);
+      });
+    };
+
+    playAmbientChord();
+    this.bgmTimer = setInterval(playAmbientChord, 4500);
+  },
+
+  stopAll() {
+    this.isRunning = false;
+    if (this.bgmTimer) {
+      clearInterval(this.bgmTimer);
+      this.bgmTimer = null;
+    }
+    if (this.chimeTimer) {
+      clearInterval(this.chimeTimer);
+      this.chimeTimer = null;
+    }
+    this.setBlowingSFX(false, 'dandelion', 0);
+  },
+
+  updateBgmMuteState() {
+    if (!this.ctx || !this.bgmGain) return;
+    const now = this.ctx.currentTime;
+    const target = (AppState.bgmEnabled && AppState.currentState === STATES.TRAINING && !AppState.isPaused) ? 0.14 : 0.0;
+    this.bgmGain.gain.setTargetAtTime(target, now, 0.25);
+  },
+
+  /**
+   * 根據是否達成合格噘唇呼吸 (isBlowingValid) 動態調節風車或蒲公英音效
+   */
+  setBlowingSFX(isBlowingValid, theme = 'dandelion', puckerStrength = 0.5) {
+    if (!this.ctx || !this.sfxGain || !this.windFilter) return;
+    const now = this.ctx.currentTime;
+
+    if (!AppState.sfxEnabled || !isBlowingValid || AppState.currentState !== STATES.TRAINING || AppState.isPaused) {
+      this.sfxGain.gain.setTargetAtTime(0.0, now, 0.18);
+      if (this.chimeTimer) {
+        clearInterval(this.chimeTimer);
+        this.chimeTimer = null;
+      }
+      return;
+    }
+
+    const clampedStrength = Math.min(1.0, Math.max(0.3, puckerStrength));
+    if (theme === 'pinwheel') {
+      // 風車模式：模擬穩定吹氣帶動風車葉片輕快旋轉的風聲 (較高中心頻率 + 週期性律動感)
+      const modFreq = 520 + clampedStrength * 340 + Math.sin(performance.now() / 90) * 65;
+      this.windFilter.frequency.setTargetAtTime(modFreq, now, 0.08);
+      this.windFilter.Q.setTargetAtTime(1.8, now, 0.1);
+      this.sfxGain.gain.setTargetAtTime(0.22 * clampedStrength, now, 0.12);
+      if (this.chimeTimer) {
+        clearInterval(this.chimeTimer);
+        this.chimeTimer = null;
+      }
+    } else {
+      // 蒲公英模式：模擬輕柔長氣吹拂絨毛並伴隨種子飄散的晶瑩泛音 (Airy Breeze + Seed Shimmer)
+      const breezeFreq = 360 + clampedStrength * 220;
+      this.windFilter.frequency.setTargetAtTime(breezeFreq, now, 0.12);
+      this.windFilter.Q.setTargetAtTime(2.8, now, 0.12);
+      this.sfxGain.gain.setTargetAtTime(0.18 * clampedStrength, now, 0.15);
+
+      if (!this.chimeTimer) {
+        const pentatonicHigh = [1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
+        this.chimeTimer = setInterval(() => {
+          if (!AppState.sfxEnabled || AppState.currentState !== STATES.TRAINING || AppState.isPaused) return;
+          const t = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(pentatonicHigh[Math.floor(Math.random() * pentatonicHigh.length)], t);
+          g.gain.setValueAtTime(0.001, t);
+          g.gain.linearRampToValueAtTime(0.018, t + 0.06);
+          g.gain.exponentialRampToValueAtTime(0.0005, t + 0.55);
+          osc.connect(g);
+          g.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.6);
+        }, 420);
+      }
+    }
   }
-  if (dom.btnHeaderVoice) {
-    dom.btnHeaderVoice.innerHTML = AppState.voiceEnabled
-      ? `<span>🔊</span><span class="hidden sm:inline">語音導航</span>`
-      : `<span>🔇</span><span class="hidden sm:inline">已靜音</span>`;
+};
+
+/**
+ * 互動模式 MP4 視覺控制器：
+ * - 吸氣階段或呼氣未達標時：鎖定於 0.0s – 3.0s 靜止/微動區間循環
+ * - 呼氣階段且達成合格噘唇呼吸 (isPlbExhaleValid) 時：推進至 3.0s – 9.0s 吹走蒲公英種子 / 風車轉動片段
+ */
+function updateInteractiveVideoPlayback(isExhalePhase, isQualifiedBlowing, puckerScore = 0.5) {
+  const video = dom.interactiveVideo;
+  if (!video || AppState.displayMode !== 'interactive') {
+    SoundscapeEngine.setBlowingSFX(false);
+    return;
+  }
+
+  const cfg = INTERACTIVE_VIDEOS[AppState.interactiveTheme] || INTERACTIVE_VIDEOS.dandelion;
+  if (video.getAttribute('data-theme') !== AppState.interactiveTheme) {
+    video.setAttribute('data-theme', AppState.interactiveTheme);
+    video.src = cfg.src;
+    video.muted = true; // 由 Web Audio API 獨立控制高品質互動背景音樂與吹氣音效，避免切幀破音
+    video.playsInline = true;
+    video.play().catch(() => {});
+  }
+
+  if (video.paused && !AppState.isPaused) {
+    video.play().catch(() => {});
+  }
+
+  const ct = video.currentTime || 0;
+
+  if (isExhalePhase && isQualifiedBlowing) {
+    // 使用者達成合格噘唇吹氣：進入 > 3.0s 的吹走種子 / 風車轉動視覺效果
+    if (ct < cfg.blowStart - 0.15 || ct >= cfg.blowEnd) {
+      try {
+        video.currentTime = cfg.blowStart;
+      } catch (e) {}
+    }
+    // 依據噘唇力度微調播放速率 (1.0x 至 1.35x)，讓吹氣力度與視覺轉速/飄散速度即時聯動
+    const dynamicRate = Math.min(1.35, Math.max(0.95, 0.90 + puckerScore * 0.55));
+    video.playbackRate = dynamicRate;
+
+    if (dom.interactiveVideoBox) {
+      dom.interactiveVideoBox.classList.add('blowing-active');
+    }
+    if (dom.badgeInteractiveState) {
+      dom.badgeInteractiveState.textContent = AppState.interactiveTheme === 'pinwheel'
+        ? '🌬️ 噘唇達標：風車加速轉動中'
+        : '🌬️ 噘唇達標：蒲公英種子吹散中';
+      dom.badgeInteractiveState.className = 'absolute top-3 left-3 z-20 px-3 py-1 rounded-full text-xs font-extrabold bg-[#FF7043]/90 text-white shadow-md backdrop-blur-xs';
+    }
+
+    SoundscapeEngine.setBlowingSFX(true, AppState.interactiveTheme, Math.max(0.45, puckerScore));
+  } else {
+    // 吸氣階段或呼氣未達標：保持在 0.0s – 3.0s 的靜止微動區間
+    if (ct >= cfg.idleEnd) {
+      try {
+        video.currentTime = cfg.idleStart;
+      } catch (e) {}
+    }
+    video.playbackRate = 0.85;
+
+    if (dom.interactiveVideoBox) {
+      dom.interactiveVideoBox.classList.remove('blowing-active');
+    }
+    if (dom.badgeInteractiveState) {
+      dom.badgeInteractiveState.textContent = isExhalePhase
+        ? '👄 請噘起嘴唇吹氣以啟動視覺效果 (0–3s 靜止態)'
+        : '🌿 閉口鼻吸準備中 (0–3s 靜止態)';
+      dom.badgeInteractiveState.className = 'absolute top-3 left-3 z-20 px-3 py-1 rounded-full text-xs font-bold bg-slate-900/75 text-teal-200 border border-teal-400/40 backdrop-blur-xs';
+    }
+
+    SoundscapeEngine.setBlowingSFX(false, AppState.interactiveTheme, 0);
   }
 }
 
@@ -786,6 +1170,7 @@ function switchViewState(targetState) {
   switch (targetState) {
     case STATES.IDLE:
       dom.stateIdle.classList.remove('hidden');
+      SoundscapeEngine.stopAll();
       stopCamera();
       break;
 
@@ -802,6 +1187,7 @@ function switchViewState(targetState) {
 
     case STATES.SUMMARY:
       dom.stateSummary.classList.remove('hidden');
+      SoundscapeEngine.stopAll();
       stopCamera();
       renderSummaryReport();
       break;
@@ -809,7 +1195,7 @@ function switchViewState(targetState) {
 }
 
 // ----------------------------------------------------------------------------
-// 10 秒坐姿基準校準 + 確認機制 (Requirement 4: 前7秒收集基準，後3秒顯示「請確認位置」)
+// 10 秒坐姿基準校準 + 確認機制 (前7秒收集基準 Dist_base，後3秒顯示「請確認位置」)
 // ----------------------------------------------------------------------------
 async function runCalibrationSequence() {
   if (AppState.calibTimerId) {
@@ -817,8 +1203,8 @@ async function runCalibrationSequence() {
     AppState.calibTimerId = null;
   }
   AppState.isCalibConfirming = false;
+  AppState.ema.initialized = false;
 
-  // 顯示倒數覆蓋層，隱藏結束後的確認面板
   if (dom.calibCountdownOverlay) dom.calibCountdownOverlay.classList.remove('hidden');
   if (dom.calibConfirmOverlay) dom.calibConfirmOverlay.classList.add('hidden');
 
@@ -828,7 +1214,7 @@ async function runCalibrationSequence() {
     dom.calibStageBadge.className = "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-[#4DB6AC]/20 text-teal-800 border border-[#4DB6AC]/40";
   }
   if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
-  if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在啟動鏡頭並準備收集 7 秒基準坐姿...";
+  if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在啟動鏡頭並準備收集 7 秒耳肩相對基準間距 (Dist_base)...";
   if (dom.calibProgressBar) dom.calibProgressBar.style.width = "0%";
 
   const started = await startCamera(dom.calibVideo);
@@ -845,10 +1231,12 @@ async function runCalibrationSequence() {
   // 重置校準累計器
   AppState.calibration = {
     dEyeBase: 0.22,
+    distBase: 0.30,
     yShoulderBase: 0.72,
     larRest: 0.04,
     samplesCount: 0,
     sumDEye: 0,
+    sumDistEarShoulder: 0,
     sumYShoulder: 0,
     sumLar: 0,
     elapsedCalibSec: 0
@@ -860,7 +1248,7 @@ async function runCalibrationSequence() {
   let secondsRemaining = totalCalibSeconds;
   dom.calibCountdown.textContent = secondsRemaining;
   if (dom.calibSubtitle) {
-    dom.calibSubtitle.textContent = "前 7 秒：正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+    dom.calibSubtitle.textContent = "前 7 秒：正在記錄雙眼間距 (D_eye) 與耳肩相對基準間距 (Dist_base)...";
   }
 
   AppState.calibTimerId = setInterval(() => {
@@ -879,15 +1267,13 @@ async function runCalibrationSequence() {
     }
 
     if (secondsRemaining > 3) {
-      // 前 7 秒 (倒數 10 -> 4)：收集基準
       dom.calibCountdown.textContent = secondsRemaining;
       if (dom.calibStageBadge) {
         dom.calibStageBadge.textContent = `步驟 1/2：收集基準坐姿 (剩餘 ${secondsRemaining - 3} 秒)`;
       }
       if (dom.calibTitle) dom.calibTitle.textContent = "請自然坐直、沉肩放鬆、閉上嘴巴";
-      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在記錄雙眼間距 (D_eye) 與雙肩靜止基準高度...";
+      if (dom.calibSubtitle) dom.calibSubtitle.textContent = "正在記錄雙眼間距 (D_eye) 與耳肩相對基準間距 (Dist_base)...";
     } else if (secondsRemaining > 0) {
-      // 後 3 秒 (倒數 3 -> 1)：顯示「請確認位置」
       dom.calibCountdown.textContent = secondsRemaining;
       if (secondsRemaining === 3) {
         lockBaselineFromSamples();
@@ -900,7 +1286,6 @@ async function runCalibrationSequence() {
       if (dom.calibTitle) dom.calibTitle.textContent = "請確認位置";
       if (dom.calibSubtitle) dom.calibSubtitle.textContent = "基準已鎖定，請保持面部及雙肩對齊於綠色參考框內...";
     } else {
-      // 10 秒結束：不自動開始訓練，進入確認畫面
       clearInterval(AppState.calibTimerId);
       AppState.calibTimerId = null;
       showCalibrationConfirmation();
@@ -913,13 +1298,19 @@ async function runCalibrationSequence() {
     const isCollectingPhase = !AppState.isCalibConfirming && (AppState.calibration.elapsedCalibSec < 7);
 
     if (AppState.isDemoMode) {
+      const sim = generateSimulatedDetections(performance.now());
       if (isCollectingPhase) {
-        AppState.calibration.sumDEye += 0.20;
-        AppState.calibration.sumLar += 0.04;
-        AppState.calibration.sumYShoulder += 0.72;
+        const face = sim.faceResult.faceLandmarks[0];
+        const pose = sim.poseResult.landmarks[0];
+        const { y11Smooth, y12Smooth, yShoulderSmooth } = smoothShoulderLandmarksEMA(pose, THRESHOLDS.emaAlpha);
+        const distEarShoulder = calculateEarShoulderDistance(pose, y11Smooth, y12Smooth);
+        AppState.calibration.sumDEye += calculateDEye(face);
+        AppState.calibration.sumLar += calculateLAR(face);
+        AppState.calibration.sumDistEarShoulder += distEarShoulder;
+        AppState.calibration.sumYShoulder += yShoulderSmooth;
         AppState.calibration.samplesCount++;
       }
-      renderCalibrationCanvas(generateSimulatedDetections(performance.now()));
+      renderCalibrationCanvas(sim);
     } else if (dom.calibVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
       try {
         const ts = getNextTimestamp();
@@ -931,14 +1322,17 @@ async function runCalibrationSequence() {
           const face = faceResult.faceLandmarks[0];
           const pose = poseResult.landmarks[0];
 
+          const { y11Smooth, y12Smooth, yShoulderSmooth } = smoothShoulderLandmarksEMA(pose, THRESHOLDS.emaAlpha);
+          const distEarShoulder = calculateEarShoulderDistance(pose, y11Smooth, y12Smooth);
+
           if (isCollectingPhase) {
             const dEye = calculateDEye(face);
             const lar = calculateLAR(face);
-            const yShoulder = (pose[11].y + pose[12].y) / 2;
 
             AppState.calibration.sumDEye += dEye;
             AppState.calibration.sumLar += lar;
-            AppState.calibration.sumYShoulder += yShoulder;
+            AppState.calibration.sumDistEarShoulder += distEarShoulder;
+            AppState.calibration.sumYShoulder += yShoulderSmooth;
             AppState.calibration.samplesCount++;
           }
         }
@@ -957,10 +1351,12 @@ function lockBaselineFromSamples() {
   if (c.samplesCount > 5) {
     c.dEyeBase = c.sumDEye / c.samplesCount;
     c.larRest = c.sumLar / c.samplesCount;
+    c.distBase = c.sumDistEarShoulder / c.samplesCount;
     c.yShoulderBase = c.sumYShoulder / c.samplesCount;
   } else {
     c.dEyeBase = 0.20;
     c.larRest = 0.04;
+    c.distBase = 0.30;
     c.yShoulderBase = 0.72;
   }
 }
@@ -974,7 +1370,7 @@ function showCalibrationConfirmation() {
 
   const c = AppState.calibration;
   if (dom.calibSummaryMetrics) {
-    dom.calibSummaryMetrics.textContent = `已收集 ${c.samplesCount} 幀基準 · D_eye: ${c.dEyeBase.toFixed(2)} · 肩高基準: ${c.yShoulderBase.toFixed(2)} · 閉口 LAR: ${c.larRest.toFixed(2)}`;
+    dom.calibSummaryMetrics.textContent = `已收集 ${c.samplesCount} 幀基準 · D_eye: ${c.dEyeBase.toFixed(2)} · 耳肩基準 Dist_base: ${c.distBase.toFixed(2)} · 閉口 LAR: ${c.larRest.toFixed(2)}`;
   }
 
   speakText("請確認位置，準備好可以點擊確認並開始訓練", true);
@@ -1003,8 +1399,28 @@ function renderCalibrationCanvas(detections) {
 
   if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
     const pose = poseResult.landmarks[0];
-    const p11 = { x: pose[11].x * w, y: pose[11].y * h };
-    const p12 = { x: pose[12].x * w, y: pose[12].y * h };
+    const y11 = AppState.ema.initialized ? AppState.ema.y11Prev : pose[11].y;
+    const y12 = AppState.ema.initialized ? AppState.ema.y12Prev : pose[12].y;
+    const p11 = { x: pose[11].x * w, y: y11 * h };
+    const p12 = { x: pose[12].x * w, y: y12 * h };
+
+    // 繪製耳肩相對基準連線 (Landmark 7->11, 8->12)
+    if (pose[7] && pose[8]) {
+      const p7 = { x: pose[7].x * w, y: pose[7].y * h };
+      const p8 = { x: pose[8].x * w, y: pose[8].y * h };
+      ctx.save();
+      ctx.strokeStyle = 'rgba(77, 182, 172, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(p7.x, p7.y);
+      ctx.lineTo(p11.x, p11.y);
+      ctx.moveTo(p8.x, p8.y);
+      ctx.lineTo(p12.x, p12.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.strokeStyle = '#4DB6AC';
     ctx.lineWidth = 4;
@@ -1050,13 +1466,16 @@ async function runTrainingSequence() {
   }
 
   const now = performance.now();
-  const targetRR = 60 / (AppState.inhaleTarget + AppState.exhaleTarget);
+  const targetRR = AppState.targetBpm;
 
   AppState.training.startTime = now;
+  AppState.training.lastFrameTime = now;
   AppState.training.phaseStartTime = now;
   AppState.training.cycleStartTime = now;
   AppState.training.currentPhase = PHASES.INHALE;
   AppState.training.cycleIndex = 1;
+  AppState.training.isSoftTransitioning = false;
+  AppState.training.softTransitionStartTime = 0;
   AppState.training.cyclesHistory = [];
   AppState.training.tInActual = 0;
   AppState.training.tExActual = 0;
@@ -1072,6 +1491,7 @@ async function runTrainingSequence() {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
+  SoundscapeEngine.startBGM();
   applyPrivacyModeStyles();
   applyDisplayModeStyles();
   syncCanvasDimensions();
@@ -1091,7 +1511,7 @@ function syncCanvasDimensions() {
 }
 
 /**
- * 切換視覺私隱模式 + Pacer 模式圓球與文字提示完全居中 (Requirement 6)
+ * 切換相機顯示模式 (實時鏡像模式 Mirror mode / 去識別化骨架網格模式 privacy mesh mode / 純引導模式 pure guiding mode)
  */
 function applyPrivacyModeStyles() {
   const mode = AppState.privacyMode;
@@ -1099,7 +1519,6 @@ function applyPrivacyModeStyles() {
     dom.selectPrivacy.value = mode;
   }
 
-  // 更新訓練畫面右上角模式按鈕高亮
   const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-sm transition cursor-pointer";
   const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
   if (dom.btnModeMirror) dom.btnModeMirror.className = mode === 'mirror' ? activeCls : inactiveCls;
@@ -1107,7 +1526,7 @@ function applyPrivacyModeStyles() {
   if (dom.btnModeMinimal) dom.btnModeMinimal.className = mode === 'minimalist' ? activeCls : inactiveCls;
 
   if (mode === 'minimalist') {
-    // Requirement 6: Pacer 模式時隱藏左側空白視訊欄，讓圓球與文字提示在畫面正中央居中
+    // 純引導模式 pure guiding mode：隱藏左側視訊欄，將引導圖示與提示文字全螢幕居中
     if (dom.visionContainer) {
       dom.visionContainer.className = "w-px h-px opacity-0 pointer-events-none fixed -left-[9999px] overflow-hidden";
     }
@@ -1121,7 +1540,7 @@ function applyPrivacyModeStyles() {
       dom.biofeedbackCardsGrid.className = "w-full max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-3";
     }
   } else {
-    // 雙欄模式 (Mirror / Privacy Mesh)：左側 60% 視訊/骨架，右側 40% 引導欄
+    // 雙欄模式：實時鏡像模式 Mirror mode / 去識別化骨架網格模式 privacy mesh mode
     if (dom.visionContainer) {
       dom.visionContainer.className = "w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0";
     }
@@ -1139,13 +1558,13 @@ function applyPrivacyModeStyles() {
       dom.trainVideo.style.opacity = '0';
       dom.trainCanvas.style.opacity = '1';
       dom.trainCanvas.classList.add('privacy-mesh-canvas');
-      dom.badgeMeshMode.textContent = AppState.isDemoMode ? "🧪 免鏡頭模擬骨架模式" : "🔒 去識別化黑底骨架模式";
+      dom.badgeMeshMode.textContent = "🔒 去識別化骨架網格模式 privacy mesh mode";
       dom.badgeMeshMode.classList.remove('hidden');
     } else {
       dom.trainVideo.style.opacity = AppState.isDemoMode ? '0' : '1';
       dom.trainCanvas.style.opacity = '1';
       dom.trainCanvas.classList.remove('privacy-mesh-canvas');
-      dom.badgeMeshMode.textContent = "📷 實時鏡像 + AR 輔助框";
+      dom.badgeMeshMode.textContent = "📷 實時鏡像模式 Mirror mode";
       dom.badgeMeshMode.classList.remove('hidden');
     }
     setTimeout(syncCanvasDimensions, 50);
@@ -1153,32 +1572,43 @@ function applyPrivacyModeStyles() {
 }
 
 /**
- * 切換氣球模式 vs 真人模式 (Requirement 3: 1=男吸 / 2=男呼 / 3=女吸 / 4=女呼)
+ * 切換呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性)
  */
 function applyDisplayModeStyles() {
-  const isHuman = AppState.displayMode === 'human';
+  const mode = AppState.displayMode; // 'balloon' | 'human' | 'interactive'
+  const isBalloon = mode === 'balloon';
+  const isHuman = mode === 'human';
+  const isInteractive = mode === 'interactive';
   const gender = AppState.humanGender;
+  const theme = AppState.interactiveTheme; // 'dandelion' | 'pinwheel'
 
-  // 更新 STATE_IDLE 設定按鈕樣式
-  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
-  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+  const idleActive = "flex-1 py-2 px-2.5 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
 
-  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = !isHuman ? idleActive : idleInactive;
+  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = isBalloon ? idleActive : idleInactive;
   if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
+  if (dom.btnPacerInteractive) dom.btnPacerInteractive.className = isInteractive ? idleActive : idleInactive;
+
   if (dom.wrapperHumanGender) {
     dom.wrapperHumanGender.classList.toggle('hidden', !isHuman);
   }
   if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? idleActive : idleInactive;
   if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? idleActive : idleInactive;
 
-  // 更新 STATE_TRAINING 頂部快速切換按鈕樣式
+  if (dom.wrapperInteractiveTheme) {
+    dom.wrapperInteractiveTheme.classList.toggle('hidden', !isInteractive);
+  }
+  if (dom.btnThemeDandelion) dom.btnThemeDandelion.className = theme === 'dandelion' ? idleActive : idleInactive;
+  if (dom.btnThemePinwheel) dom.btnThemePinwheel.className = theme === 'pinwheel' ? idleActive : idleInactive;
+
   const trainActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
   const trainInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
-  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = !isHuman ? trainActive : trainInactive;
+  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = isBalloon ? trainActive : trainInactive;
   if (dom.btnTrainMale) dom.btnTrainMale.className = (isHuman && gender === 'male') ? trainActive : trainInactive;
   if (dom.btnTrainFemale) dom.btnTrainFemale.className = (isHuman && gender === 'female') ? trainActive : trainInactive;
+  if (dom.btnTrainDandelion) dom.btnTrainDandelion.className = (isInteractive && theme === 'dandelion') ? trainActive : trainInactive;
+  if (dom.btnTrainPinwheel) dom.btnTrainPinwheel.className = (isInteractive && theme === 'pinwheel') ? trainActive : trainInactive;
 
-  // 更新圖片路徑 (1.jpg/2.jpg 或 3.jpg/4.jpg)
   const imgPair = HUMAN_IMAGES[gender] || HUMAN_IMAGES.male;
   if (dom.imgHumanInhale && dom.imgHumanInhale.getAttribute('src') !== imgPair.inhale) {
     dom.imgHumanInhale.src = imgPair.inhale;
@@ -1187,15 +1617,30 @@ function applyDisplayModeStyles() {
     dom.imgHumanExhale.src = imgPair.exhale;
   }
 
-  // 切換氣球或真人框顯示
   if (dom.pacerOuterRing) {
-    dom.pacerOuterRing.classList.toggle('hidden', isHuman);
+    dom.pacerOuterRing.classList.toggle('hidden', !isBalloon);
   }
   if (dom.humanDemoWrapper) {
     dom.humanDemoWrapper.classList.toggle('hidden', !isHuman);
   }
+  if (dom.interactiveDemoWrapper) {
+    dom.interactiveDemoWrapper.classList.toggle('hidden', !isInteractive);
+  }
 
-  // 同步當前吸呼階段的圖片透明度
+  if (isInteractive && dom.interactiveVideo) {
+    const cfg = INTERACTIVE_VIDEOS[theme] || INTERACTIVE_VIDEOS.dandelion;
+    if (dom.interactiveVideo.getAttribute('data-theme') !== theme) {
+      dom.interactiveVideo.setAttribute('data-theme', theme);
+      dom.interactiveVideo.src = cfg.src;
+      dom.interactiveVideo.muted = true;
+      dom.interactiveVideo.load();
+      dom.interactiveVideo.play().catch(() => {});
+    }
+  } else if (dom.interactiveVideo) {
+    dom.interactiveVideo.pause();
+    SoundscapeEngine.setBlowingSFX(false);
+  }
+
   const isInhale = AppState.training.currentPhase === PHASES.INHALE;
   if (dom.imgHumanInhale && dom.imgHumanExhale) {
     dom.imgHumanInhale.classList.toggle('active-img', isInhale);
@@ -1216,6 +1661,9 @@ function trainingInferenceLoop() {
 
   const now = performance.now();
   const train = AppState.training;
+  const dt = Math.min(0.1, Math.max(0.001, (now - (train.lastFrameTime || now)) / 1000));
+  train.lastFrameTime = now;
+
   const elapsedTotal = (now - train.startTime) / 1000;
   train.elapsedSeconds = elapsedTotal;
 
@@ -1226,7 +1674,7 @@ function trainingInferenceLoop() {
   dom.valCycleCount.textContent = train.cycleIndex;
 
   if (remainingTotal <= 0) {
-    finalizeCurrentCycle(now);
+    finalizeCurrentCycle(now, train.isSoftTransitioning);
     switchViewState(STATES.SUMMARY);
     return;
   }
@@ -1236,7 +1684,7 @@ function trainingInferenceLoop() {
     const sim = generateSimulatedDetections(now);
     AppState.lastFaceResult = sim.faceResult;
     AppState.lastPoseResult = sim.poseResult;
-    processFrameDetections(sim.faceResult, sim.poseResult);
+    processFrameDetections(sim.faceResult, sim.poseResult, now, dt);
   } else if (dom.trainVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
     try {
       const ts = getNextTimestamp();
@@ -1246,16 +1694,16 @@ function trainingInferenceLoop() {
       AppState.lastFaceResult = faceResult;
       AppState.lastPoseResult = poseResult;
 
-      processFrameDetections(faceResult, poseResult);
+      processFrameDetections(faceResult, poseResult, now, dt);
     } catch (e) {
       console.warn("推論幀略過:", e);
     }
   }
 
-  // 2. 呼吸節奏狀態機推進
+  // 2. 呼吸節奏狀態機推進 (包含呼氣 70% 柔性過渡)
   advanceBreathingPacer(now);
 
-  // 3. 即時更新平均呼吸頻率 (Requirement 7)
+  // 3. 即時更新平均呼吸頻率
   updateLiveRespiratoryRate(now);
 
   // 4. 繪製視覺 Canvas 覆蓋層
@@ -1268,18 +1716,17 @@ function trainingInferenceLoop() {
 }
 
 // ----------------------------------------------------------------------------
-// 實時平均呼吸頻率計算與回饋 (Requirement 7: Average Respiratory Rate)
+// 實時平均呼吸頻率計算與回饋 (Average Respiratory Rate)
 // ----------------------------------------------------------------------------
 function updateLiveRespiratoryRate(now) {
   const train = AppState.training;
   const targetCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
-  const targetRR = 60 / targetCycleSec;
+  const targetRR = AppState.targetBpm;
 
   const elapsedSec = Math.max(0.1, (now - train.startTime) / 1000);
   const currentCycleElapsed = Math.max(0, (now - train.cycleStartTime) / 1000);
   const currentCycleProgress = Math.min(0.99, currentCycleElapsed / targetCycleSec);
 
-  // 結合已完成週期與當前週期進度計算即時平均呼吸頻率 (breaths/min)
   let liveAvgRR = targetRR;
   if (train.cyclesHistory.length > 0) {
     const totalCompletedDuration = train.cyclesHistory.reduce((acc, c) => acc + (c.cycleDuration || targetCycleSec), 0);
@@ -1306,11 +1753,11 @@ function updateLiveRespiratoryRate(now) {
       dom.textRrState.className = "text-xs md:text-sm font-bold text-amber-600";
       dom.cardRr.className = "p-3 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between transition-all shadow-sm";
     } else if (diff <= 2.5) {
-      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)} 達標)`;
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR} 達標)`;
       dom.textRrState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
       dom.cardRr.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
-      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR.toFixed(1)})`;
+      dom.textRrState.textContent = `${rrFormatted} BPM (目標 ${targetRR})`;
       dom.textRrState.className = "text-xs md:text-sm font-bold text-teal-700";
       dom.cardRr.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
     }
@@ -1318,9 +1765,9 @@ function updateLiveRespiratoryRate(now) {
 }
 
 // ----------------------------------------------------------------------------
-// 逐幀特徵點運算與臨床規則評估 (Frame Processing & Clinical Rules — 嚴格保留)
+// 逐幀特徵點運算與臨床規則評估 (Upgraded Frame Processing & Clinical Rules)
 // ----------------------------------------------------------------------------
-function processFrameDetections(faceResult, poseResult) {
+function processFrameDetections(faceResult, poseResult, now = performance.now(), dt = 0.033) {
   const m = AppState.currentMetrics;
   const cal = AppState.calibration;
   const train = AppState.training;
@@ -1343,63 +1790,92 @@ function processFrameDetections(faceResult, poseResult) {
   const blendshapes = extractBlendshapes(faceResult.faceBlendshapes);
   m.mouthPucker = blendshapes.mouthPucker;
   m.mouthFunnel = blendshapes.mouthFunnel;
+  m.jawOpen = blendshapes.jawOpen;
 
-  const shoulder = calculateShoulderMetrics(pose, m.dEye, cal.yShoulderBase);
+  // 【改進一】EMA 雙肩平滑 + 軀幹耳肩相對基準定位 (Torso Anchoring)
+  const shoulder = calculateShoulderMetrics(pose, m.dEye, cal.distBase);
+  m.y11Smooth = shoulder.y11Smooth;
+  m.y12Smooth = shoulder.y12Smooth;
   m.yShoulderCurr = shoulder.yShoulderCurr;
-  m.deltaYShoulder = shoulder.deltaYShoulder;
+  m.distCurr = shoulder.distCurr;
+  m.deltaYRelative = shoulder.deltaYRelative;
+  m.deltaYShoulder = shoulder.deltaYRelative;
   m.shoulderTilt = shoulder.shoulderTilt;
 
   train.totalShoulderFrames++;
-  const isShoulderRelaxed = m.deltaYShoulder <= THRESHOLDS.shoulderHikeWarn;
+  const isShoulderRelaxed = m.deltaYRelative <= THRESHOLDS.shoulderHikeWarn;
   if (isShoulderRelaxed) {
     train.validShoulderFrames++;
   }
 
   if (train.currentPhase === PHASES.INHALE) {
+    // 【改進二】吸氣階段（閉口鼻吸）雙重聯合檢驗：LAR <= 0.06 且 jawOpen < 0.05
     train.totalInhaleFrames++;
-    const isMouthClosed = m.lar <= THRESHOLDS.larInhaleMax;
+    const isMouthClosed = isNasalInhaleValid(m.lar, m.jawOpen);
 
     if (isMouthClosed && isShoulderRelaxed) {
       train.validInhaleFrames++;
-      train.tInActual += 0.033;
+      train.tInActual += dt;
     }
 
-    if (m.deltaYShoulder > THRESHOLDS.shoulderHikeWarn) {
+    if (m.deltaYRelative > THRESHOLDS.shoulderHikeWarn) {
       updateFeedbackQueue(2, "偵測到聳肩用力，請沉肩放鬆");
-    } else if (m.lar > THRESHOLDS.larInhaleErr) {
+    } else if (!isMouthClosed && (m.lar > THRESHOLDS.larInhaleMax || m.jawOpen >= THRESHOLDS.jawOpenInhaleMax)) {
       updateFeedbackQueue(3, "請閉上嘴巴，用鼻慢慢吸氣");
     } else {
       updateFeedbackQueue(5, "做得好，用鼻吸氣，沉肩放鬆");
     }
 
   } else {
-    // 呼氣階段 (EXHALE - 噘唇吹氣判定)
+    // 呼氣階段 (EXHALE — 噘唇吹氣判定 + 70% 呼氣彈性容錯與柔性過渡)
     train.totalExhaleFrames++;
-    const isPlbShape = 
-      (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax) &&
-      (m.mouthPucker >= THRESHOLDS.mouthPuckerMin || m.mouthFunnel >= THRESHOLDS.mouthFunnelMin);
+    const isPlbShape = isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel);
 
     if (isPlbShape) {
       train.validPlbExhaleFrames++;
-      train.tExActual += 0.033;
+      train.tExActual += dt;
     }
 
-    if (m.deltaYShoulder > THRESHOLDS.shoulderHikeWarn) {
-      updateFeedbackQueue(2, "呼氣時請保持雙肩放鬆，切勿聳肩");
-    } else if (m.lar > THRESHOLDS.larExhaleWideErr && m.mouthPucker < THRESHOLDS.puckerWideErrMax) {
-      updateFeedbackQueue(3, "請將嘴唇噘起成吹口哨狀，唔好張大口呼氣");
-    } else if (m.lar < THRESHOLDS.larExhaleClosedErr && m.mouthPucker < THRESHOLDS.puckerClosedErrMax) {
-      updateFeedbackQueue(3, "請微微噘起嘴唇，慢慢吹氣出嚟");
-    } else {
-      updateFeedbackQueue(5, "噘唇嘴型很好，繼續慢慢吹長氣");
+    const phaseElapsed = (now - train.phaseStartTime) / 1000;
+    const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
+    const isGoodPlbDuration = train.tExActual >= (phaseElapsed * 0.50);
+    const isLipsNaturallyRelaxed = (m.lar < THRESHOLDS.larExhaleMin) || (m.mouthPucker < THRESHOLDS.puckerClosedErrMax);
+
+    // 【改進三】呼氣階段彈性容錯與柔性過渡 (Exhalation Soft Transition)
+    if (isOver70Pct && isGoodPlbDuration && isLipsNaturallyRelaxed) {
+      if (!train.isSoftTransitioning) {
+        train.isSoftTransitioning = true;
+        train.softTransitionStartTime = now;
+        const currentProgress = Math.min(1, phaseElapsed / AppState.exhaleTarget);
+        train.softTransitionStartScale = 1.30 - (currentProgress * 0.45);
+      }
+      // 判定該週期為「合格呼氣完成」，不得觸發「提早中斷呼氣」錯誤警示
+      updateFeedbackQueue(5, "合格呼氣完成，平順過渡至下一次吸氣");
+    } else if (!train.isSoftTransitioning) {
+      if (m.deltaYRelative > THRESHOLDS.shoulderHikeWarn) {
+        updateFeedbackQueue(2, "呼氣時請保持雙肩放鬆，切勿聳肩");
+      } else if (m.lar > THRESHOLDS.larExhaleWideErr && m.mouthPucker < THRESHOLDS.puckerWideErrMax) {
+        updateFeedbackQueue(3, "請將嘴唇噘起成吹口哨狀，唔好張大口呼氣");
+      } else if (!isOver70Pct && m.lar < THRESHOLDS.larExhaleClosedErr && m.mouthPucker < THRESHOLDS.puckerClosedErrMax) {
+        updateFeedbackQueue(3, "請微微噘起嘴唇，慢慢吹氣出嚟");
+      } else if (!isOver70Pct && phaseElapsed > (AppState.exhaleTarget * 0.5) && train.tExActual < (phaseElapsed * 0.5)) {
+        updateFeedbackQueue(4, "呼氣太快完喇，試下跟住圓圈慢慢吹長啲氣");
+      } else {
+        updateFeedbackQueue(5, "噘唇嘴型很好，繼續慢慢吹長氣");
+      }
     }
   }
+
+  // 更新互動模式 MP4 (蒲公英 / 風車) 與吹氣音效狀態
+  const isExhale = train.currentPhase === PHASES.EXHALE;
+  const isQualifiedBlow = isExhale && (isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel) || train.isSoftTransitioning);
+  updateInteractiveVideoPlayback(isExhale, isQualifiedBlow, Math.max(m.mouthPucker, m.mouthFunnel));
 
   renderIndicatorCards(isShoulderRelaxed);
 }
 
 // ----------------------------------------------------------------------------
-// 節奏球 / 真人示範與週期狀態機推進 (Pacer Timing & Switching)
+// 節奏球 / 真人示範與週期狀態機推進 (Pacer Timing & 70% Soft Transition)
 // ----------------------------------------------------------------------------
 function advanceBreathingPacer(now) {
   const train = AppState.training;
@@ -1408,13 +1884,15 @@ function advanceBreathingPacer(now) {
   if (train.currentPhase === PHASES.INHALE) {
     const progress = Math.min(1, phaseElapsed / AppState.inhaleTarget);
     const secsLeft = Math.max(0, AppState.inhaleTarget - phaseElapsed).toFixed(1);
-    
+
     dom.pacerActionText.textContent = "用鼻吸氣";
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
     if (dom.humanActionText) dom.humanActionText.textContent = "用鼻吸氣";
     if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
+    if (dom.interactiveActionText) dom.interactiveActionText.textContent = "用鼻吸氣 (保持靜止)";
+    if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "閉口由鼻吸氣 · 雙肩保持下沉";
-    
+
     const scale = 0.85 + (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
     dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
@@ -1423,6 +1901,39 @@ function advanceBreathingPacer(now) {
       triggerPhaseSwitch(PHASES.EXHALE);
     }
   } else {
+    // 呼氣階段 (EXHALE)：支援 70% 達標後即刻平滑收尾過渡至下一次吸氣
+    if (train.isSoftTransitioning) {
+      const softDuration = 0.35; // 350ms 平滑收尾動畫
+      const softElapsed = (now - train.softTransitionStartTime) / 1000;
+      const softProgress = Math.min(1, softElapsed / softDuration);
+      const startScale = train.softTransitionStartScale || 0.95;
+      const scale = startScale - (startScale - 0.85) * softProgress;
+
+      dom.pacerActionText.textContent = "合格呼氣完成";
+      dom.pacerSecondsText.textContent = "平順過渡";
+      if (dom.humanActionText) dom.humanActionText.textContent = "合格呼氣完成";
+      if (dom.humanSecondsText) dom.humanSecondsText.textContent = "平順過渡";
+      if (dom.interactiveActionText) dom.interactiveActionText.textContent = "合格呼氣完成";
+      if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = "平順過渡";
+      if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "呼氣已達標完成 · 平順進入下一次吸氣";
+
+      dom.pacerBall.style.transform = `scale(${scale})`;
+
+      // 真人示範照片同步提前淡入吸氣預備態
+      if (dom.imgHumanInhale && dom.imgHumanExhale) {
+        dom.imgHumanInhale.classList.add('active-img');
+        dom.imgHumanExhale.classList.remove('active-img');
+      }
+
+      if (softProgress >= 1) {
+        finalizeCurrentCycle(now, true);
+        train.cycleIndex++;
+        train.cycleStartTime = now;
+        triggerPhaseSwitch(PHASES.INHALE);
+      }
+      return;
+    }
+
     const progress = Math.min(1, phaseElapsed / AppState.exhaleTarget);
     const secsLeft = Math.max(0, AppState.exhaleTarget - phaseElapsed).toFixed(1);
 
@@ -1430,18 +1941,24 @@ function advanceBreathingPacer(now) {
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
     if (dom.humanActionText) dom.humanActionText.textContent = "噘唇吹氣";
     if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
+    if (dom.interactiveActionText) {
+      dom.interactiveActionText.textContent = AppState.interactiveTheme === 'pinwheel' ? "噘唇吹轉風車" : "噘唇吹散蒲公英";
+    }
+    if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "嘴唇噘起如吹蠟燭 · 均勻慢呼";
 
     const scale = 1.30 - (progress * 0.45);
     dom.pacerBall.style.transform = `scale(${scale})`;
     dom.pacerBall.className = "w-32 h-32 md:w-36 md:h-36 rounded-full pacer-exhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100";
 
-    if (phaseElapsed > (AppState.exhaleTarget * 0.5) && train.tExActual < (phaseElapsed * 0.5)) {
+    // 僅在未達 70% 柔性完成門檻且有效噘唇時間不足時，才提示提早中斷呼氣警示
+    const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
+    if (!isOver70Pct && phaseElapsed > (AppState.exhaleTarget * 0.5) && train.tExActual < (phaseElapsed * 0.5)) {
       updateFeedbackQueue(4, "呼氣太快完喇，試下跟住圓圈慢慢吹長啲氣");
     }
 
     if (phaseElapsed >= AppState.exhaleTarget) {
-      finalizeCurrentCycle(now);
+      finalizeCurrentCycle(now, false);
       train.cycleIndex++;
       train.cycleStartTime = now;
       triggerPhaseSwitch(PHASES.INHALE);
@@ -1453,6 +1970,8 @@ function triggerPhaseSwitch(newPhase) {
   const train = AppState.training;
   train.currentPhase = newPhase;
   train.phaseStartTime = performance.now();
+  train.isSoftTransitioning = false;
+  train.softTransitionStartTime = 0;
 
   const isInhale = newPhase === PHASES.INHALE;
   if (dom.imgHumanInhale && dom.imgHumanExhale) {
@@ -1474,7 +1993,7 @@ function triggerPhaseSwitch(newPhase) {
   }
 }
 
-function finalizeCurrentCycle(now = performance.now()) {
+function finalizeCurrentCycle(now = performance.now(), wasSoftTransition = false) {
   const train = AppState.training;
   const safeTin = Math.max(train.tInActual, 0.5);
   const achievedIeRatio = train.tExActual / safeTin;
@@ -1486,14 +2005,17 @@ function finalizeCurrentCycle(now = performance.now()) {
     tInActual: train.tInActual,
     tExActual: train.tExActual,
     achievedIe: achievedIeRatio,
-    targetIe: AppState.exhaleTarget / AppState.inhaleTarget,
+    targetIe: AppState.ieRatio,
+    softTransitionCompleted: wasSoftTransition,
     cycleDuration: cycleDuration,
     cycleRR: cycleRR,
     avgRR: train.avgRR
   });
 
   dom.badgeIeActual.textContent = `1 : ${achievedIeRatio.toFixed(1)}`;
-  dom.textIeState.textContent = `1 : ${achievedIeRatio.toFixed(1)} (目標 1:${(AppState.exhaleTarget / AppState.inhaleTarget).toFixed(1)})`;
+  dom.textIeState.textContent = wasSoftTransition
+    ? `1 : ${achievedIeRatio.toFixed(1)} (合格呼氣柔性完成)`
+    : `1 : ${achievedIeRatio.toFixed(1)} (目標 1:${AppState.ieRatio})`;
 
   train.tInActual = 0;
   train.tExActual = 0;
@@ -1506,21 +2028,24 @@ function renderIndicatorCards(isShoulderRelaxed) {
   const m = AppState.currentMetrics;
   const train = AppState.training;
 
-  dom.badgePlbScore.textContent = `LAR: ${m.lar.toFixed(2)}`;
+  dom.badgePlbScore.textContent = `LAR:${m.lar.toFixed(2)} | Jaw:${m.jawOpen.toFixed(2)}`;
   if (train.currentPhase === PHASES.INHALE) {
-    if (m.lar <= THRESHOLDS.larInhaleMax) {
-      dom.textPlbState.textContent = "閉口鼻吸 (達標)";
+    if (isNasalInhaleValid(m.lar, m.jawOpen)) {
+      dom.textPlbState.textContent = "閉口鼻吸 (雙重達標)";
       dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
       dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
     } else {
-      dom.textPlbState.textContent = "吸氣張口 (需閉口)";
+      dom.textPlbState.textContent = "吸氣微張/下頜下垂 (需閉口)";
       dom.textPlbState.className = "text-xs md:text-sm font-bold text-rose-600";
       dom.cardPlb.className = "p-3 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm";
     }
   } else {
-    const isPlb = (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax) &&
-                  (m.mouthPucker >= THRESHOLDS.mouthPuckerMin || m.mouthFunnel >= THRESHOLDS.mouthFunnelMin);
-    if (isPlb) {
+    const isPlb = isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel);
+    if (train.isSoftTransitioning) {
+      dom.textPlbState.textContent = "合格呼氣完成 (柔性過渡)";
+      dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
+      dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
+    } else if (isPlb) {
       dom.textPlbState.textContent = "噘唇吹氣 (達標)";
       dom.textPlbState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
       dom.cardPlb.className = "p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
@@ -1531,14 +2056,14 @@ function renderIndicatorCards(isShoulderRelaxed) {
     }
   }
 
-  dom.badgeShoulderDelta.textContent = `ΔY: ${m.deltaYShoulder >= 0 ? '+' : ''}${m.deltaYShoulder.toFixed(2)}`;
+  dom.badgeShoulderDelta.textContent = `ΔY_rel: ${m.deltaYRelative >= 0 ? '+' : ''}${m.deltaYRelative.toFixed(2)}`;
   if (isShoulderRelaxed) {
-    dom.textShoulderState.textContent = "放鬆沉肩 (正常)";
+    dom.textShoulderState.textContent = "耳肩距離穩定 (放鬆沉肩)";
     dom.textShoulderState.className = "text-xs md:text-sm font-bold text-[#2E7D32]";
     dom.cardShoulder.className = "p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between transition-all shadow-sm";
     dom.cardShoulder.classList.remove('shoulder-alert-active');
   } else {
-    dom.textShoulderState.textContent = "偵測到聳肩代償";
+    dom.textShoulderState.textContent = "偵測到起肩代償";
     dom.textShoulderState.className = "text-xs md:text-sm font-bold text-rose-600";
     dom.cardShoulder.className = "p-3 rounded-2xl bg-rose-50 border border-rose-500 flex items-center justify-between shoulder-alert-active transition-all shadow-sm";
   }
@@ -1567,28 +2092,33 @@ function renderTrainingCanvas(faceResults, poseResults) {
 
   if (!m.hasFace && !m.hasPose) return;
 
-  // 繪製雙肩基準線與當前骨架連線
+  // 繪製耳肩相對基準垂線與 EMA 平滑後雙肩骨架連線
   if (m.hasPose && poseResults && poseResults.landmarks && poseResults.landmarks.length > 0) {
     const pose = poseResults.landmarks[0];
-    const p11 = { x: pose[11].x * w, y: pose[11].y * h };
-    const p12 = { x: pose[12].x * w, y: pose[12].y * h };
+    const y11 = AppState.ema.initialized ? AppState.ema.y11Prev : pose[11].y;
+    const y12 = AppState.ema.initialized ? AppState.ema.y12Prev : pose[12].y;
+    const p11 = { x: pose[11].x * w, y: y11 * h };
+    const p12 = { x: pose[12].x * w, y: y12 * h };
 
-    if (AppState.calibration.yShoulderBase > 0) {
-      const yBasePx = AppState.calibration.yShoulderBase * h;
+    if (pose[7] && pose[8]) {
+      const p7 = { x: pose[7].x * w, y: pose[7].y * h };
+      const p8 = { x: pose[8].x * w, y: pose[8].y * h };
       ctx.save();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.strokeStyle = 'rgba(77, 182, 172, 0.50)';
       ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
+      ctx.setLineDash([5, 5]);
       ctx.beginPath();
-      ctx.moveTo(w * 0.15, yBasePx);
-      ctx.lineTo(w * 0.85, yBasePx);
+      ctx.moveTo(p7.x, p7.y);
+      ctx.lineTo(p11.x, p11.y);
+      ctx.moveTo(p8.x, p8.y);
+      ctx.lineTo(p12.x, p12.y);
       ctx.stroke();
       ctx.restore();
     }
 
     ctx.save();
     ctx.lineWidth = 4;
-    if (m.deltaYShoulder > THRESHOLDS.shoulderHikeWarn) {
+    if (m.deltaYRelative > THRESHOLDS.shoulderHikeWarn) {
       ctx.strokeStyle = '#ef4444';
       ctx.setLineDash([8, 6]);
     } else {
@@ -1641,8 +2171,8 @@ function renderTrainingCanvas(faceResults, poseResults) {
     ctx.save();
     ctx.lineWidth = 3.5;
     const isGoodPlb = AppState.training.currentPhase === PHASES.INHALE
-      ? (m.lar <= THRESHOLDS.larInhaleMax)
-      : (m.lar >= THRESHOLDS.larExhaleMin && m.lar <= THRESHOLDS.larExhaleMax);
+      ? isNasalInhaleValid(m.lar, m.jawOpen)
+      : (isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel) || AppState.training.isSoftTransitioning);
     ctx.strokeStyle = isGoodPlb ? '#4DB6AC' : '#FF7043';
     ctx.fillStyle = isGoodPlb ? 'rgba(77, 182, 172, 0.28)' : 'rgba(255, 112, 67, 0.28)';
 
@@ -1672,14 +2202,14 @@ function renderSummaryReport() {
 
   let sumIe = 0;
   train.cyclesHistory.forEach(c => sumIe += c.achievedIe);
-  const meanIe = completedCycles > 0 ? (sumIe / completedCycles).toFixed(1) : "2.0";
+  const meanIe = completedCycles > 0 ? (sumIe / completedCycles).toFixed(1) : AppState.ieRatio.toFixed(1);
 
-  const plbAcc = train.totalExhaleFrames > 0 
-    ? Math.round((train.validPlbExhaleFrames / train.totalExhaleFrames) * 100) 
+  const plbAcc = train.totalExhaleFrames > 0
+    ? Math.round((train.validPlbExhaleFrames / train.totalExhaleFrames) * 100)
     : 92;
 
-  const shoulderAcc = train.totalShoulderFrames > 0 
-    ? Math.round((train.validShoulderFrames / train.totalShoulderFrames) * 100) 
+  const shoulderAcc = train.totalShoulderFrames > 0
+    ? Math.round((train.validShoulderFrames / train.totalShoulderFrames) * 100)
     : 96;
 
   let gradeText = "優秀 (A)";
@@ -1699,7 +2229,7 @@ function renderSummaryReport() {
   dom.sumShoulderAcc.textContent = `${shoulderAcc}%`;
   dom.sumGrade.textContent = gradeText;
 
-  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，平均呼吸頻率為每分鐘${meanRR}次，評級為${gradeText}`);
+  speakText(`訓練完成，你共完成了${completedCycles}次呼吸週期，平均呼吸頻率為每分鐘${meanRR}次，評級為${gradeText}`, true);
   loadAndRenderLocalHistory();
 }
 
@@ -1711,19 +2241,21 @@ function exportDeidentifiedCSV() {
   const meanRR = dom.sumRr ? dom.sumRr.textContent : train.avgRR.toFixed(1);
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-  csvContent += "=== 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 匿名臨床數據報表 ===\n";
+  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 — 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;
   csvContent += `完成循環總數,${train.cyclesHistory.length}\n`;
-  csvContent += `平均呼吸頻率(次/分),${meanRR}\n`;
-  csvContent += `設定目標吸呼比,1:${(AppState.exhaleTarget / AppState.inhaleTarget).toFixed(1)}\n\n`;
+  csvContent += `設定目標呼吸頻率(BPM),${AppState.targetBpm}\n`;
+  csvContent += `實測平均呼吸頻率(次/分),${meanRR}\n`;
+  csvContent += `設定目標吸呼比,1:${AppState.ieRatio}\n\n`;
 
-  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比,單次週期呼吸頻率(次/分),累計平均呼吸頻率(次/分)\n";
+  csvContent += "週期序號,實測有效吸氣時間(秒),實測噘唇呼氣時間(秒),實測I:E吸呼比,呼氣70%柔性過渡完成,單次週期呼吸頻率(次/分),累計平均呼吸頻率(次/分)\n";
   train.cyclesHistory.forEach(c => {
-    const cRR = c.cycleRR ? c.cycleRR.toFixed(1) : (60 / (AppState.inhaleTarget + AppState.exhaleTarget)).toFixed(1);
+    const cRR = c.cycleRR ? c.cycleRR.toFixed(1) : AppState.targetBpm.toFixed(1);
     const aRR = c.avgRR ? c.avgRR.toFixed(1) : meanRR;
-    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)},${cRR},${aRR}\n`;
+    const softFlag = c.softTransitionCompleted ? '是' : '否';
+    csvContent += `${c.cycle},${c.tInActual.toFixed(2)},${c.tExActual.toFixed(2)},1:${c.achievedIe.toFixed(2)},${softFlag},${cRR},${aRR}\n`;
   });
 
   const encodedUri = encodeURI(csvContent);
@@ -1775,7 +2307,7 @@ function loadAndRenderLocalHistory() {
   } catch (e) {
     records = [];
   }
-  
+
   if (records.length === 0) {
     dom.listHistory.innerHTML = `<div class="text-slate-400 py-2 text-center">暫無本地歷史紀錄（完成訓練後可點擊上方儲存）</div>`;
     return;
@@ -1804,11 +2336,13 @@ function updateDebugReadouts() {
   const m = AppState.currentMetrics;
   if (!dom.dbgLar) return;
   dom.dbgLar.textContent = m.lar.toFixed(3);
+  if (dom.dbgJaw) dom.dbgJaw.textContent = m.jawOpen.toFixed(3);
   dom.dbgPucker.textContent = m.mouthPucker.toFixed(3);
   dom.dbgFunnel.textContent = m.mouthFunnel.toFixed(3);
-  dom.dbgShoulder.textContent = m.deltaYShoulder.toFixed(3);
+  dom.dbgShoulder.textContent = m.deltaYRelative.toFixed(3);
+  if (dom.dbgDistEs) dom.dbgDistEs.textContent = m.distCurr.toFixed(3);
   dom.dbgDeye.textContent = m.dEye.toFixed(3);
-  dom.dbgTilt.textContent = m.shoulderTilt.toFixed(3);
+  if (dom.dbgTilt) dom.dbgTilt.textContent = m.shoulderTilt.toFixed(3);
   if (dom.dbgRr) dom.dbgRr.textContent = AppState.training.avgRR.toFixed(1) + " BPM";
 }
 
@@ -1822,60 +2356,80 @@ function closeDebugDrawer() {
   if (dom.debugBackdrop) dom.debugBackdrop.classList.add('hidden');
 }
 
+/**
+ * 根據設定的 BPM (20 至 5) 與吸呼比例 (1:2 或 1:3) 自動計算吸氣與呼氣秒數
+ */
 function updatePacingCalculationsUI() {
-  const ratio = AppState.exhaleTarget / AppState.inhaleTarget;
-  const totalCycleSec = AppState.inhaleTarget + AppState.exhaleTarget;
-  const targetBpm = 60 / totalCycleSec;
+  const bpm = Math.max(5, Math.min(20, AppState.targetBpm));
+  const ratio = AppState.ieRatio === 3 ? 3 : 2;
+  const totalCycleSec = 60.0 / bpm;
+  const inhaleSec = totalCycleSec / (1 + ratio);
+  const exhaleSec = inhaleSec * ratio;
 
-  document.querySelectorAll('.btn-ie-quick').forEach(btn => {
-    const btnIn = parseFloat(btn.dataset.in);
-    const btnEx = parseFloat(btn.dataset.ex);
-    const isMatch = Math.abs(AppState.inhaleTarget - btnIn) < 0.05 && Math.abs(AppState.exhaleTarget - btnEx) < 0.05;
-    if (isMatch) {
-      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
-    } else {
-      btn.className = "btn-ie-quick flex-1 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
-    }
-  });
+  AppState.inhaleTarget = inhaleSec;
+  AppState.exhaleTarget = exhaleSec;
 
-  if (dom.labelIePreset) dom.labelIePreset.textContent = `目標 1 : ${ratio.toFixed(1)}`;
-  if (dom.valTargetBpm) dom.valTargetBpm.textContent = `${targetBpm.toFixed(1)} BPM (次/分)`;
-  if (dom.valCycleTotal) dom.valCycleTotal.textContent = `單次循環總長: ${totalCycleSec.toFixed(1)} 秒 (吸 ${AppState.inhaleTarget.toFixed(1)}s / 呼 ${AppState.exhaleTarget.toFixed(1)}s)`;
+  const activeBtnCls = "flex-1 py-2.5 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const inactiveBtnCls = "flex-1 py-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+
+  if (dom.btnRatio12) dom.btnRatio12.className = ratio === 2 ? activeBtnCls : inactiveBtnCls;
+  if (dom.btnRatio13) dom.btnRatio13.className = ratio === 3 ? activeBtnCls : inactiveBtnCls;
+
+  if (dom.labelIePreset) dom.labelIePreset.textContent = `目標 1 : ${ratio}`;
+  if (dom.valTargetBpm) dom.valTargetBpm.textContent = `${bpm} BPM (次/分)`;
+  if (dom.valInhaleCalc) dom.valInhaleCalc.textContent = `${inhaleSec.toFixed(1)} 秒`;
+  if (dom.valExhaleCalc) dom.valExhaleCalc.textContent = `${exhaleSec.toFixed(1)} 秒`;
+  if (dom.valCycleTotal) {
+    dom.valCycleTotal.textContent = `單次循環總長: ${totalCycleSec.toFixed(1)} 秒 (自動換算：吸氣 ${inhaleSec.toFixed(1)}s / 呼氣 ${exhaleSec.toFixed(1)}s)`;
+  }
+
+  const mins = Math.round(AppState.totalDuration / 60);
+  if (dom.valDurationMins) {
+    dom.valDurationMins.textContent = `${mins} 分鐘`;
+  }
 }
 
 function setupEventListeners() {
-  dom.inputInhale.addEventListener('input', (e) => {
-    AppState.inhaleTarget = parseFloat(e.target.value);
-    dom.valInhale.textContent = `${AppState.inhaleTarget.toFixed(1)} 秒`;
-    updatePacingCalculationsUI();
-  });
-
-  dom.inputExhale.addEventListener('input', (e) => {
-    AppState.exhaleTarget = parseFloat(e.target.value);
-    dom.valExhale.textContent = `${AppState.exhaleTarget.toFixed(1)} 秒`;
-    updatePacingCalculationsUI();
-  });
-
-  document.querySelectorAll('.btn-ie-quick').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const inVal = parseFloat(btn.dataset.in);
-      const exVal = parseFloat(btn.dataset.ex);
-      AppState.inhaleTarget = inVal;
-      AppState.exhaleTarget = exVal;
-      dom.inputInhale.value = inVal;
-      dom.inputExhale.value = exVal;
-      dom.valInhale.textContent = `${inVal.toFixed(1)} 秒`;
-      dom.valExhale.textContent = `${exVal.toFixed(1)} 秒`;
+  // 1. BPM 設定滑桿 (20 至 5 BPM)
+  if (dom.inputBpm) {
+    dom.inputBpm.addEventListener('input', (e) => {
+      AppState.targetBpm = parseInt(e.target.value, 10);
       updatePacingCalculationsUI();
-      showToast(`⏱️ 已切換吸呼比為 1 : ${(exVal / inVal).toFixed(0)}（目標頻率 ${(60 / (inVal + exVal)).toFixed(1)} BPM）`);
     });
-  });
+  }
 
-  // 視覺私隱模式選擇
-  dom.selectPrivacy.addEventListener('change', (e) => {
-    AppState.privacyMode = e.target.value;
-    applyPrivacyModeStyles();
-  });
+  // 2. 吸呼比例 (僅限 1:2 或 1:3)
+  if (dom.btnRatio12) {
+    dom.btnRatio12.addEventListener('click', () => {
+      AppState.ieRatio = 2;
+      updatePacingCalculationsUI();
+      showToast(`⏱️ 已切換吸呼比為 1 : 2（目標頻率 ${AppState.targetBpm} BPM）`);
+    });
+  }
+  if (dom.btnRatio13) {
+    dom.btnRatio13.addEventListener('click', () => {
+      AppState.ieRatio = 3;
+      updatePacingCalculationsUI();
+      showToast(`⏱️ 已切換吸呼比為 1 : 3（目標頻率 ${AppState.targetBpm} BPM）`);
+    });
+  }
+
+  // 3. 訓練總時長滑桿 (1 至 10 分鐘，已移至目標吸呼時間與呼吸頻率面板)
+  if (dom.inputDuration) {
+    dom.inputDuration.addEventListener('input', (e) => {
+      const mins = parseInt(e.target.value, 10);
+      AppState.totalDuration = mins * 60;
+      if (dom.valDurationMins) dom.valDurationMins.textContent = `${mins} 分鐘`;
+    });
+  }
+
+  // 4. 相機顯示模式選擇
+  if (dom.selectPrivacy) {
+    dom.selectPrivacy.addEventListener('change', (e) => {
+      AppState.privacyMode = e.target.value;
+      applyPrivacyModeStyles();
+    });
+  }
 
   if (dom.btnModeMirror) {
     dom.btnModeMirror.addEventListener('click', () => {
@@ -1896,7 +2450,7 @@ function setupEventListeners() {
     });
   }
 
-  // 真人模式與性別切換 (STATE_IDLE 與 STATE_TRAINING)
+  // 5. 呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性)
   if (dom.btnPacerBalloon) {
     dom.btnPacerBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
@@ -1921,13 +2475,47 @@ function setupEventListeners() {
       applyDisplayModeStyles();
     });
   }
+  if (dom.btnPacerInteractive) {
+    dom.btnPacerInteractive.addEventListener('click', () => {
+      AppState.displayMode = 'interactive';
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnThemeDandelion) {
+    dom.btnThemeDandelion.addEventListener('click', () => {
+      AppState.displayMode = 'interactive';
+      AppState.interactiveTheme = 'dandelion';
+      applyDisplayModeStyles();
+      showToast("🌼 已選擇互動模式：蒲公英 (噘唇達標即吹走種子)");
+    });
+  }
+  if (dom.btnThemePinwheel) {
+    dom.btnThemePinwheel.addEventListener('click', () => {
+      AppState.displayMode = 'interactive';
+      AppState.interactiveTheme = 'pinwheel';
+      applyDisplayModeStyles();
+      showToast("🎡 已選擇互動模式：風車 (噘唇達標即吹轉風車)");
+    });
+  }
+  if (dom.toggleBgm) {
+    dom.toggleBgm.addEventListener('change', (e) => {
+      AppState.bgmEnabled = e.target.checked;
+      SoundscapeEngine.updateBgmMuteState();
+    });
+  }
+  if (dom.toggleSfx) {
+    dom.toggleSfx.addEventListener('change', (e) => {
+      AppState.sfxEnabled = e.target.checked;
+      if (!AppState.sfxEnabled) SoundscapeEngine.setBlowingSFX(false);
+    });
+  }
 
-  // 訓練中快速切換氣球 / 男示範 / 女示範
+  // 訓練中快速切換氣球 / 男性 / 女性
   if (dom.btnTrainBalloon) {
     dom.btnTrainBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
       applyDisplayModeStyles();
-      showToast("🎈 已切換至氣球節奏球模式");
+      showToast("🎈 已切換至氣球模式");
     });
   }
   if (dom.btnTrainMale) {
@@ -1935,7 +2523,7 @@ function setupEventListeners() {
       AppState.displayMode = 'human';
       AppState.humanGender = 'male';
       applyDisplayModeStyles();
-      showToast("👨 已切換至真人示範（男性：1=男吸 / 2=男呼）");
+      showToast("👨 已切換至真人示範（男性）");
     });
   }
   if (dom.btnTrainFemale) {
@@ -1943,25 +2531,32 @@ function setupEventListeners() {
       AppState.displayMode = 'human';
       AppState.humanGender = 'female';
       applyDisplayModeStyles();
-      showToast("👩 已切換至真人示範（女性：3=女吸 / 4=女呼）");
+      showToast("👩 已切換至真人示範（女性）");
     });
   }
-
-  dom.selectDuration.addEventListener('change', (e) => {
-    AppState.totalDuration = parseInt(e.target.value, 10);
-  });
-
-  dom.toggleVoice.addEventListener('change', (e) => {
-    AppState.voiceEnabled = e.target.checked;
-    syncVoiceUI();
-    showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
-  });
-
-  if (dom.btnHeaderVoice) {
-    dom.btnHeaderVoice.addEventListener('click', () => {
-      AppState.voiceEnabled = !AppState.voiceEnabled;
-      syncVoiceUI();
-      showToast(AppState.voiceEnabled ? "🔊 已開啟廣東話語音導航" : "🔇 已靜音語音導航");
+  if (dom.btnTrainDandelion) {
+    dom.btnTrainDandelion.addEventListener('click', () => {
+      AppState.displayMode = 'interactive';
+      AppState.interactiveTheme = 'dandelion';
+      applyDisplayModeStyles();
+      showToast("🌼 已切換至互動模式（蒲公英）");
+    });
+  }
+  if (dom.btnTrainPinwheel) {
+    dom.btnTrainPinwheel.addEventListener('click', () => {
+      AppState.displayMode = 'interactive';
+      AppState.interactiveTheme = 'pinwheel';
+      applyDisplayModeStyles();
+      showToast("🎡 已切換至互動模式（風車）");
+    });
+  }
+  if (dom.btnTrainBgm) {
+    dom.btnTrainBgm.addEventListener('click', () => {
+      AppState.bgmEnabled = !AppState.bgmEnabled;
+      if (dom.toggleBgm) dom.toggleBgm.checked = AppState.bgmEnabled;
+      SoundscapeEngine.updateBgmMuteState();
+      dom.btnTrainBgm.textContent = AppState.bgmEnabled ? "🎵 背景音樂: 開" : "🔇 背景音樂: 關";
+      showToast(AppState.bgmEnabled ? "🎵 已開啟療癒背景音樂" : "🔇 已暫停背景音樂");
     });
   }
 
@@ -1980,14 +2575,13 @@ function setupEventListeners() {
     });
   }
 
-  // 校準畫面取消返回設定
   if (dom.btnCancelCalib) {
     dom.btnCancelCalib.addEventListener('click', () => {
       switchViewState(STATES.IDLE);
     });
   }
 
-  // Requirement 4: 10秒校準結束後的確認畫面三顆按鈕
+  // 10秒校準結束後的確認畫面三顆按鈕
   if (dom.btnConfirmStart) {
     dom.btnConfirmStart.addEventListener('click', () => {
       speakText("現在開始呼吸訓練", true);
@@ -2006,7 +2600,7 @@ function setupEventListeners() {
     });
   }
 
-  // Requirement 5: TRAINING 右上角「🔄 重校準」按鈕，隨時可回 CALIBRATING
+  // TRAINING 右上角「🔄 重校準」按鈕
   if (dom.btnTrainRecalibrate) {
     dom.btnTrainRecalibrate.addEventListener('click', () => {
       showToast("🔄 返回 10 秒基準校準畫面");
@@ -2019,6 +2613,9 @@ function setupEventListeners() {
       if (!AppState.isPaused) {
         AppState.isPaused = true;
         AppState.pauseStartTime = performance.now();
+        if (dom.interactiveVideo) dom.interactiveVideo.pause();
+        SoundscapeEngine.updateBgmMuteState();
+        SoundscapeEngine.setBlowingSFX(false);
         dom.btnPauseTrain.textContent = "▶️ 繼續訓練";
         showToast("⏸️ 訓練已暫停");
       } else {
@@ -2026,7 +2623,10 @@ function setupEventListeners() {
         AppState.training.startTime += pausedDuration;
         AppState.training.phaseStartTime += pausedDuration;
         AppState.training.cycleStartTime += pausedDuration;
+        AppState.training.lastFrameTime = performance.now();
         AppState.isPaused = false;
+        if (AppState.displayMode === 'interactive' && dom.interactiveVideo) dom.interactiveVideo.play().catch(() => {});
+        SoundscapeEngine.updateBgmMuteState();
         dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
         showToast("▶️ 訓練繼續");
       }
@@ -2072,6 +2672,13 @@ function setupEventListeners() {
     dom.dbgLblLarInMax.textContent = THRESHOLDS.larInhaleMax.toFixed(2);
   });
 
+  if (dom.dbgRangeJawInMax) {
+    dom.dbgRangeJawInMax.addEventListener('input', (e) => {
+      THRESHOLDS.jawOpenInhaleMax = parseFloat(e.target.value);
+      dom.dbgLblJawInMax.textContent = THRESHOLDS.jawOpenInhaleMax.toFixed(2);
+    });
+  }
+
   dom.dbgRangePuckerMin.addEventListener('input', (e) => {
     THRESHOLDS.mouthPuckerMin = parseFloat(e.target.value);
     dom.dbgLblPuckerMin.textContent = THRESHOLDS.mouthPuckerMin.toFixed(2);
@@ -2089,12 +2696,17 @@ function setupEventListeners() {
 
   dom.btnResetThresholds.addEventListener('click', () => {
     THRESHOLDS.larInhaleMax = 0.06;
+    THRESHOLDS.jawOpenInhaleMax = 0.05;
     THRESHOLDS.mouthPuckerMin = 0.40;
     THRESHOLDS.mouthFunnelMin = 0.35;
     THRESHOLDS.shoulderHikeWarn = 0.12;
 
     dom.dbgRangeLarInMax.value = 0.06;
     dom.dbgLblLarInMax.textContent = "0.06";
+    if (dom.dbgRangeJawInMax) {
+      dom.dbgRangeJawInMax.value = 0.05;
+      dom.dbgLblJawInMax.textContent = "0.05";
+    }
     dom.dbgRangePuckerMin.value = 0.40;
     dom.dbgLblPuckerMin.textContent = "0.40";
     dom.dbgRangeFunnelMin.value = 0.35;
@@ -2136,7 +2748,6 @@ function bootstrapApp() {
   setupEventListeners();
   updatePacingCalculationsUI();
   applyDisplayModeStyles();
-  syncVoiceUI();
   initTTS();
   loadAndRenderLocalHistory();
   initMediaPipeVision();

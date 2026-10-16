@@ -1,9 +1,9 @@
 /**
- * 舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 Service Worker (sw.js v4.0.0)
+ * 舒呼(SootheBreath) 呼吸復康訓練 Service Worker (sw.js v4.1.0)
  * Network-First strategy for local files + Precache for offline & Human Mode JPG assets
  */
 
-const CACHE_NAME = 'soothebreath-v4.0.0';
+const CACHE_NAME = 'soothebreath-v5.0.0';
 
 const PRECACHE_ASSETS = [
   './',
@@ -14,7 +14,9 @@ const PRECACHE_ASSETS = [
   './1.jpg',
   './2.jpg',
   './3.jpg',
-  './4.jpg'
+  './4.jpg',
+  './Dandelion.mp4',
+  './Pinwheel.mp4'
 ];
 
 self.addEventListener('install', (event) => {
