@@ -42,26 +42,6 @@ const THRESHOLDS = {
   emaAlpha: 0.35               // 雙肩座標 EMA 指數移動平均平滑係數 (alpha = 0.35)
 };
 
-// 互動模式視訊路徑映射 (蒲公英 Dandelion.mp4 / 風車 Pinwheel.mp4)
-const INTERACTIVE_VIDEOS = {
-  dandelion: {
-    src: 'Dandelion.mp4',
-    title: '蒲公英 (Dandelion)',
-    idleStart: 0.0,
-    idleEnd: 2.85,
-    blowStart: 3.0,
-    blowEnd: 8.85
-  },
-  pinwheel: {
-    src: 'Pinwheel.mp4',
-    title: '風車 (Pinwheel)',
-    idleStart: 0.0,
-    idleEnd: 2.15,
-    blowStart: 3.0,
-    blowEnd: 8.50
-  }
-};
-
 // 真人示範模式圖片路徑映射 (男性 / 女性)
 const HUMAN_IMAGES = {
   male: {
@@ -104,11 +84,8 @@ const AppState = {
   exhaleTarget: 4.0,           // 由 BPM 與吸呼比自動計算：inhaleTarget * ieRatio
   totalDuration: 120,          // 訓練總時長秒數 (1 至 10 分鐘滑桿，預設 2 分鐘 = 120 秒)
   privacyMode: 'privacy_mesh', // 'mirror' (實時鏡像模式 Mirror mode) | 'privacy_mesh' (去識別化骨架網格模式 privacy mesh mode) | 'minimalist' (純引導模式 pure guiding mode)
-  displayMode: 'balloon',      // 'balloon' | 'human' | 'interactive'
+  displayMode: 'balloon',      // 'balloon' | 'human'
   humanGender: 'male',         // 'male' (男性) | 'female' (女性)
-  interactiveTheme: 'dandelion', // 'dandelion' (蒲公英) | 'pinwheel' (風車)
-  bgmEnabled: true,            // 療癒背景音樂 (BGM) 預設開啟
-  sfxEnabled: true,            // 互動吹氣音效 (風車/蒲公英 SFX) 預設開啟
   voiceEnabled: true,          // 廣東話 (zh-HK) 語音導航口令：預設開啟 (Default ON)
 
   // EMA 平滑濾波狀態器 (針對 Pose Landmark 11 左肩, 12 右肩)
@@ -232,15 +209,9 @@ function cacheDomElements() {
     selectPrivacy: document.getElementById('select-privacy-mode'),
     btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
     btnPacerHuman: document.getElementById('btn-pacer-human'),
-    btnPacerInteractive: document.getElementById('btn-pacer-interactive'),
     wrapperHumanGender: document.getElementById('wrapper-human-gender'),
     btnGenderMale: document.getElementById('btn-gender-male'),
     btnGenderFemale: document.getElementById('btn-gender-female'),
-    wrapperInteractiveTheme: document.getElementById('wrapper-interactive-theme'),
-    btnThemeDandelion: document.getElementById('btn-theme-dandelion'),
-    btnThemePinwheel: document.getElementById('btn-theme-pinwheel'),
-    toggleBgm: document.getElementById('toggle-bgm'),
-    toggleSfx: document.getElementById('toggle-sfx'),
     btnStart: document.getElementById('btn-start'),
     btnStartDemo: document.getElementById('btn-start-demo'),
 
@@ -279,9 +250,6 @@ function cacheDomElements() {
     btnTrainBalloon: document.getElementById('btn-train-balloon'),
     btnTrainMale: document.getElementById('btn-train-male'),
     btnTrainFemale: document.getElementById('btn-train-female'),
-    btnTrainDandelion: document.getElementById('btn-train-dandelion'),
-    btnTrainPinwheel: document.getElementById('btn-train-pinwheel'),
-    btnTrainBgm: document.getElementById('btn-train-bgm'),
     btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
 
     // 呼吸節奏球與真人示範元件
@@ -296,12 +264,6 @@ function cacheDomElements() {
     imgHumanExhale: document.getElementById('img-human-exhale'),
     humanActionText: document.getElementById('human-action-text'),
     humanSecondsText: document.getElementById('human-seconds-text'),
-    interactiveDemoWrapper: document.getElementById('interactive-demo-wrapper'),
-    interactiveVideoBox: document.getElementById('interactive-video-box'),
-    interactiveVideo: document.getElementById('interactive-video'),
-    badgeInteractiveState: document.getElementById('badge-interactive-state'),
-    interactiveActionText: document.getElementById('interactive-action-text'),
-    interactiveSecondsText: document.getElementById('interactive-seconds-text'),
     pacerPhaseHint: document.getElementById('pacer-phase-hint'),
 
     // 四張實時生物反饋指示卡
@@ -846,261 +808,6 @@ function speakText(text, isPhaseSwitch = false) {
   }
 }
 
-
-// ============================================================================
-// 6B. 互動模式 MP4 視訊狀態機與 Web Audio 療癒背景音樂 / 吹氣音效引擎
-// ============================================================================
-const SoundscapeEngine = {
-  ctx: null,
-  isRunning: false,
-  bgmGain: null,
-  bgmTimer: null,
-  sfxGain: null,
-  windFilter: null,
-  windSource: null,
-  chimeTimer: null,
-  currentIntensity: 0,
-  chordIndex: 0,
-
-  init() {
-    if (this.ctx) return;
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    this.ctx = new AudioCtx();
-
-    // 1. 建立持續柔和背景音樂 (BGM) 主音量節點
-    this.bgmGain = this.ctx.createGain();
-    this.bgmGain.gain.value = AppState.bgmEnabled ? 0.12 : 0.0;
-    this.bgmGain.connect(this.ctx.destination);
-
-    // 2. 建立互動吹氣音效 (SFX: 風車轉動微風聲 / 蒲公英吹散輕拂聲) 合成節點
-    this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.0;
-
-    this.windFilter = this.ctx.createBiquadFilter();
-    this.windFilter.type = 'bandpass';
-    this.windFilter.frequency.value = 420;
-    this.windFilter.Q.value = 2.2;
-
-    // 產生 3 秒循環粉紅/白噪音緩衝區模擬自然柔和吹氣風聲
-    const bufferSize = this.ctx.sampleRate * 3;
-    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.04;
-      b6 = white * 0.115926;
-    }
-
-    this.windSource = this.ctx.createBufferSource();
-    this.windSource.buffer = noiseBuffer;
-    this.windSource.loop = true;
-    this.windSource.connect(this.windFilter);
-    this.windFilter.connect(this.sfxGain);
-    this.sfxGain.connect(this.ctx.destination);
-    this.windSource.start(0);
-  },
-
-  startBGM() {
-    this.init();
-    if (!this.ctx) return;
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
-    }
-    this.updateBgmMuteState();
-    if (this.isRunning) return;
-    this.isRunning = true;
-
-    // 療癒五聲音階和弦序列 (Fmaj7 -> Cmaj7 -> Dm7 -> Am7)
-    const chords = [
-      [174.61, 220.00, 261.63, 329.63],
-      [130.81, 196.00, 246.94, 329.63],
-      [146.83, 220.00, 261.63, 349.23],
-      [220.00, 261.63, 329.63, 392.00]
-    ];
-
-    const playAmbientChord = () => {
-      if (!this.isRunning || !this.ctx || !AppState.bgmEnabled) return;
-      const now = this.ctx.currentTime;
-      const notes = chords[this.chordIndex % chords.length];
-      this.chordIndex++;
-
-      notes.forEach((freq, idx) => {
-        const osc = this.ctx.createOscillator();
-        const noteGain = this.ctx.createGain();
-        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
-        osc.frequency.setValueAtTime(freq, now);
-
-        noteGain.gain.setValueAtTime(0.001, now);
-        noteGain.gain.linearRampToValueAtTime(0.08 / notes.length, now + 1.8);
-        noteGain.gain.exponentialRampToValueAtTime(0.001, now + 4.6);
-
-        osc.connect(noteGain);
-        noteGain.connect(this.bgmGain);
-        osc.start(now);
-        osc.stop(now + 4.7);
-      });
-    };
-
-    playAmbientChord();
-    this.bgmTimer = setInterval(playAmbientChord, 4500);
-  },
-
-  stopAll() {
-    this.isRunning = false;
-    if (this.bgmTimer) {
-      clearInterval(this.bgmTimer);
-      this.bgmTimer = null;
-    }
-    if (this.chimeTimer) {
-      clearInterval(this.chimeTimer);
-      this.chimeTimer = null;
-    }
-    this.setBlowingSFX(false, 'dandelion', 0);
-  },
-
-  updateBgmMuteState() {
-    if (!this.ctx || !this.bgmGain) return;
-    const now = this.ctx.currentTime;
-    const target = (AppState.bgmEnabled && AppState.currentState === STATES.TRAINING && !AppState.isPaused) ? 0.14 : 0.0;
-    this.bgmGain.gain.setTargetAtTime(target, now, 0.25);
-  },
-
-  /**
-   * 根據是否達成合格噘唇呼吸 (isBlowingValid) 動態調節風車或蒲公英音效
-   */
-  setBlowingSFX(isBlowingValid, theme = 'dandelion', puckerStrength = 0.5) {
-    if (!this.ctx || !this.sfxGain || !this.windFilter) return;
-    const now = this.ctx.currentTime;
-
-    if (!AppState.sfxEnabled || !isBlowingValid || AppState.currentState !== STATES.TRAINING || AppState.isPaused) {
-      this.sfxGain.gain.setTargetAtTime(0.0, now, 0.18);
-      if (this.chimeTimer) {
-        clearInterval(this.chimeTimer);
-        this.chimeTimer = null;
-      }
-      return;
-    }
-
-    const clampedStrength = Math.min(1.0, Math.max(0.3, puckerStrength));
-    if (theme === 'pinwheel') {
-      // 風車模式：模擬穩定吹氣帶動風車葉片輕快旋轉的風聲 (較高中心頻率 + 週期性律動感)
-      const modFreq = 520 + clampedStrength * 340 + Math.sin(performance.now() / 90) * 65;
-      this.windFilter.frequency.setTargetAtTime(modFreq, now, 0.08);
-      this.windFilter.Q.setTargetAtTime(1.8, now, 0.1);
-      this.sfxGain.gain.setTargetAtTime(0.22 * clampedStrength, now, 0.12);
-      if (this.chimeTimer) {
-        clearInterval(this.chimeTimer);
-        this.chimeTimer = null;
-      }
-    } else {
-      // 蒲公英模式：模擬輕柔長氣吹拂絨毛並伴隨種子飄散的晶瑩泛音 (Airy Breeze + Seed Shimmer)
-      const breezeFreq = 360 + clampedStrength * 220;
-      this.windFilter.frequency.setTargetAtTime(breezeFreq, now, 0.12);
-      this.windFilter.Q.setTargetAtTime(2.8, now, 0.12);
-      this.sfxGain.gain.setTargetAtTime(0.18 * clampedStrength, now, 0.15);
-
-      if (!this.chimeTimer) {
-        const pentatonicHigh = [1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
-        this.chimeTimer = setInterval(() => {
-          if (!AppState.sfxEnabled || AppState.currentState !== STATES.TRAINING || AppState.isPaused) return;
-          const t = this.ctx.currentTime;
-          const osc = this.ctx.createOscillator();
-          const g = this.ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(pentatonicHigh[Math.floor(Math.random() * pentatonicHigh.length)], t);
-          g.gain.setValueAtTime(0.001, t);
-          g.gain.linearRampToValueAtTime(0.018, t + 0.06);
-          g.gain.exponentialRampToValueAtTime(0.0005, t + 0.55);
-          osc.connect(g);
-          g.connect(this.ctx.destination);
-          osc.start(t);
-          osc.stop(t + 0.6);
-        }, 420);
-      }
-    }
-  }
-};
-
-/**
- * 互動模式 MP4 視覺控制器：
- * - 吸氣階段或呼氣未達標時：鎖定於 0.0s – 3.0s 靜止/微動區間循環
- * - 呼氣階段且達成合格噘唇呼吸 (isPlbExhaleValid) 時：推進至 3.0s – 9.0s 吹走蒲公英種子 / 風車轉動片段
- */
-function updateInteractiveVideoPlayback(isExhalePhase, isQualifiedBlowing, puckerScore = 0.5) {
-  const video = dom.interactiveVideo;
-  if (!video || AppState.displayMode !== 'interactive') {
-    SoundscapeEngine.setBlowingSFX(false);
-    return;
-  }
-
-  const cfg = INTERACTIVE_VIDEOS[AppState.interactiveTheme] || INTERACTIVE_VIDEOS.dandelion;
-  if (video.getAttribute('data-theme') !== AppState.interactiveTheme) {
-    video.setAttribute('data-theme', AppState.interactiveTheme);
-    video.src = cfg.src;
-    video.muted = true; // 由 Web Audio API 獨立控制高品質互動背景音樂與吹氣音效，避免切幀破音
-    video.playsInline = true;
-    video.play().catch(() => {});
-  }
-
-  if (video.paused && !AppState.isPaused) {
-    video.play().catch(() => {});
-  }
-
-  const ct = video.currentTime || 0;
-
-  if (isExhalePhase && isQualifiedBlowing) {
-    // 使用者達成合格噘唇吹氣：進入 > 3.0s 的吹走種子 / 風車轉動視覺效果
-    if (ct < cfg.blowStart - 0.15 || ct >= cfg.blowEnd) {
-      try {
-        video.currentTime = cfg.blowStart;
-      } catch (e) {}
-    }
-    // 依據噘唇力度微調播放速率 (1.0x 至 1.35x)，讓吹氣力度與視覺轉速/飄散速度即時聯動
-    const dynamicRate = Math.min(1.35, Math.max(0.95, 0.90 + puckerScore * 0.55));
-    video.playbackRate = dynamicRate;
-
-    if (dom.interactiveVideoBox) {
-      dom.interactiveVideoBox.classList.add('blowing-active');
-    }
-    if (dom.badgeInteractiveState) {
-      dom.badgeInteractiveState.textContent = AppState.interactiveTheme === 'pinwheel'
-        ? '🌬️ 噘唇達標：風車加速轉動中'
-        : '🌬️ 噘唇達標：蒲公英種子吹散中';
-      dom.badgeInteractiveState.className = 'absolute top-3 left-3 z-20 px-3 py-1 rounded-full text-xs font-extrabold bg-[#FF7043]/90 text-white shadow-md backdrop-blur-xs';
-    }
-
-    SoundscapeEngine.setBlowingSFX(true, AppState.interactiveTheme, Math.max(0.45, puckerScore));
-  } else {
-    // 吸氣階段或呼氣未達標：保持在 0.0s – 3.0s 的靜止微動區間
-    if (ct >= cfg.idleEnd) {
-      try {
-        video.currentTime = cfg.idleStart;
-      } catch (e) {}
-    }
-    video.playbackRate = 0.85;
-
-    if (dom.interactiveVideoBox) {
-      dom.interactiveVideoBox.classList.remove('blowing-active');
-    }
-    if (dom.badgeInteractiveState) {
-      dom.badgeInteractiveState.textContent = isExhalePhase
-        ? '👄 請噘起嘴唇吹氣以啟動視覺效果 (0–3s 靜止態)'
-        : '🌿 閉口鼻吸準備中 (0–3s 靜止態)';
-      dom.badgeInteractiveState.className = 'absolute top-3 left-3 z-20 px-3 py-1 rounded-full text-xs font-bold bg-slate-900/75 text-teal-200 border border-teal-400/40 backdrop-blur-xs';
-    }
-
-    SoundscapeEngine.setBlowingSFX(false, AppState.interactiveTheme, 0);
-  }
-}
-
 // ============================================================================
 // 7. 防閃爍提示佇列引擎 (Section 4 Priority Feedback Queue)
 // ============================================================================
@@ -1170,7 +877,6 @@ function switchViewState(targetState) {
   switch (targetState) {
     case STATES.IDLE:
       dom.stateIdle.classList.remove('hidden');
-      SoundscapeEngine.stopAll();
       stopCamera();
       break;
 
@@ -1187,7 +893,6 @@ function switchViewState(targetState) {
 
     case STATES.SUMMARY:
       dom.stateSummary.classList.remove('hidden');
-      SoundscapeEngine.stopAll();
       stopCamera();
       renderSummaryReport();
       break;
@@ -1491,7 +1196,6 @@ async function runTrainingSequence() {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
-  SoundscapeEngine.startBGM();
   applyPrivacyModeStyles();
   applyDisplayModeStyles();
   syncCanvasDimensions();
@@ -1575,39 +1279,25 @@ function applyPrivacyModeStyles() {
  * 切換呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性)
  */
 function applyDisplayModeStyles() {
-  const mode = AppState.displayMode; // 'balloon' | 'human' | 'interactive'
-  const isBalloon = mode === 'balloon';
-  const isHuman = mode === 'human';
-  const isInteractive = mode === 'interactive';
+  const isHuman = AppState.displayMode === 'human';
   const gender = AppState.humanGender;
-  const theme = AppState.interactiveTheme; // 'dandelion' | 'pinwheel'
 
-  const idleActive = "flex-1 py-2 px-2.5 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
-  const idleInactive = "flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
 
-  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = isBalloon ? idleActive : idleInactive;
+  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = !isHuman ? idleActive : idleInactive;
   if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
-  if (dom.btnPacerInteractive) dom.btnPacerInteractive.className = isInteractive ? idleActive : idleInactive;
-
   if (dom.wrapperHumanGender) {
     dom.wrapperHumanGender.classList.toggle('hidden', !isHuman);
   }
   if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? idleActive : idleInactive;
   if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? idleActive : idleInactive;
 
-  if (dom.wrapperInteractiveTheme) {
-    dom.wrapperInteractiveTheme.classList.toggle('hidden', !isInteractive);
-  }
-  if (dom.btnThemeDandelion) dom.btnThemeDandelion.className = theme === 'dandelion' ? idleActive : idleInactive;
-  if (dom.btnThemePinwheel) dom.btnThemePinwheel.className = theme === 'pinwheel' ? idleActive : idleInactive;
-
   const trainActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
   const trainInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
-  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = isBalloon ? trainActive : trainInactive;
+  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = !isHuman ? trainActive : trainInactive;
   if (dom.btnTrainMale) dom.btnTrainMale.className = (isHuman && gender === 'male') ? trainActive : trainInactive;
   if (dom.btnTrainFemale) dom.btnTrainFemale.className = (isHuman && gender === 'female') ? trainActive : trainInactive;
-  if (dom.btnTrainDandelion) dom.btnTrainDandelion.className = (isInteractive && theme === 'dandelion') ? trainActive : trainInactive;
-  if (dom.btnTrainPinwheel) dom.btnTrainPinwheel.className = (isInteractive && theme === 'pinwheel') ? trainActive : trainInactive;
 
   const imgPair = HUMAN_IMAGES[gender] || HUMAN_IMAGES.male;
   if (dom.imgHumanInhale && dom.imgHumanInhale.getAttribute('src') !== imgPair.inhale) {
@@ -1618,27 +1308,10 @@ function applyDisplayModeStyles() {
   }
 
   if (dom.pacerOuterRing) {
-    dom.pacerOuterRing.classList.toggle('hidden', !isBalloon);
+    dom.pacerOuterRing.classList.toggle('hidden', isHuman);
   }
   if (dom.humanDemoWrapper) {
     dom.humanDemoWrapper.classList.toggle('hidden', !isHuman);
-  }
-  if (dom.interactiveDemoWrapper) {
-    dom.interactiveDemoWrapper.classList.toggle('hidden', !isInteractive);
-  }
-
-  if (isInteractive && dom.interactiveVideo) {
-    const cfg = INTERACTIVE_VIDEOS[theme] || INTERACTIVE_VIDEOS.dandelion;
-    if (dom.interactiveVideo.getAttribute('data-theme') !== theme) {
-      dom.interactiveVideo.setAttribute('data-theme', theme);
-      dom.interactiveVideo.src = cfg.src;
-      dom.interactiveVideo.muted = true;
-      dom.interactiveVideo.load();
-      dom.interactiveVideo.play().catch(() => {});
-    }
-  } else if (dom.interactiveVideo) {
-    dom.interactiveVideo.pause();
-    SoundscapeEngine.setBlowingSFX(false);
   }
 
   const isInhale = AppState.training.currentPhase === PHASES.INHALE;
@@ -1866,11 +1539,6 @@ function processFrameDetections(faceResult, poseResult, now = performance.now(),
     }
   }
 
-  // 更新互動模式 MP4 (蒲公英 / 風車) 與吹氣音效狀態
-  const isExhale = train.currentPhase === PHASES.EXHALE;
-  const isQualifiedBlow = isExhale && (isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel) || train.isSoftTransitioning);
-  updateInteractiveVideoPlayback(isExhale, isQualifiedBlow, Math.max(m.mouthPucker, m.mouthFunnel));
-
   renderIndicatorCards(isShoulderRelaxed);
 }
 
@@ -1889,8 +1557,6 @@ function advanceBreathingPacer(now) {
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
     if (dom.humanActionText) dom.humanActionText.textContent = "用鼻吸氣";
     if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
-    if (dom.interactiveActionText) dom.interactiveActionText.textContent = "用鼻吸氣 (保持靜止)";
-    if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "閉口由鼻吸氣 · 雙肩保持下沉";
 
     const scale = 0.85 + (progress * 0.45);
@@ -1913,8 +1579,6 @@ function advanceBreathingPacer(now) {
       dom.pacerSecondsText.textContent = "平順過渡";
       if (dom.humanActionText) dom.humanActionText.textContent = "合格呼氣完成";
       if (dom.humanSecondsText) dom.humanSecondsText.textContent = "平順過渡";
-      if (dom.interactiveActionText) dom.interactiveActionText.textContent = "合格呼氣完成";
-      if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = "平順過渡";
       if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "呼氣已達標完成 · 平順進入下一次吸氣";
 
       dom.pacerBall.style.transform = `scale(${scale})`;
@@ -1941,10 +1605,6 @@ function advanceBreathingPacer(now) {
     dom.pacerSecondsText.textContent = `${secsLeft}s`;
     if (dom.humanActionText) dom.humanActionText.textContent = "噘唇吹氣";
     if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
-    if (dom.interactiveActionText) {
-      dom.interactiveActionText.textContent = AppState.interactiveTheme === 'pinwheel' ? "噘唇吹轉風車" : "噘唇吹散蒲公英";
-    }
-    if (dom.interactiveSecondsText) dom.interactiveSecondsText.textContent = `${secsLeft}s`;
     if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "嘴唇噘起如吹蠟燭 · 均勻慢呼";
 
     const scale = 1.30 - (progress * 0.45);
@@ -2475,40 +2135,6 @@ function setupEventListeners() {
       applyDisplayModeStyles();
     });
   }
-  if (dom.btnPacerInteractive) {
-    dom.btnPacerInteractive.addEventListener('click', () => {
-      AppState.displayMode = 'interactive';
-      applyDisplayModeStyles();
-    });
-  }
-  if (dom.btnThemeDandelion) {
-    dom.btnThemeDandelion.addEventListener('click', () => {
-      AppState.displayMode = 'interactive';
-      AppState.interactiveTheme = 'dandelion';
-      applyDisplayModeStyles();
-      showToast("🌼 已選擇互動模式：蒲公英 (噘唇達標即吹走種子)");
-    });
-  }
-  if (dom.btnThemePinwheel) {
-    dom.btnThemePinwheel.addEventListener('click', () => {
-      AppState.displayMode = 'interactive';
-      AppState.interactiveTheme = 'pinwheel';
-      applyDisplayModeStyles();
-      showToast("🎡 已選擇互動模式：風車 (噘唇達標即吹轉風車)");
-    });
-  }
-  if (dom.toggleBgm) {
-    dom.toggleBgm.addEventListener('change', (e) => {
-      AppState.bgmEnabled = e.target.checked;
-      SoundscapeEngine.updateBgmMuteState();
-    });
-  }
-  if (dom.toggleSfx) {
-    dom.toggleSfx.addEventListener('change', (e) => {
-      AppState.sfxEnabled = e.target.checked;
-      if (!AppState.sfxEnabled) SoundscapeEngine.setBlowingSFX(false);
-    });
-  }
 
   // 訓練中快速切換氣球 / 男性 / 女性
   if (dom.btnTrainBalloon) {
@@ -2532,31 +2158,6 @@ function setupEventListeners() {
       AppState.humanGender = 'female';
       applyDisplayModeStyles();
       showToast("👩 已切換至真人示範（女性）");
-    });
-  }
-  if (dom.btnTrainDandelion) {
-    dom.btnTrainDandelion.addEventListener('click', () => {
-      AppState.displayMode = 'interactive';
-      AppState.interactiveTheme = 'dandelion';
-      applyDisplayModeStyles();
-      showToast("🌼 已切換至互動模式（蒲公英）");
-    });
-  }
-  if (dom.btnTrainPinwheel) {
-    dom.btnTrainPinwheel.addEventListener('click', () => {
-      AppState.displayMode = 'interactive';
-      AppState.interactiveTheme = 'pinwheel';
-      applyDisplayModeStyles();
-      showToast("🎡 已切換至互動模式（風車）");
-    });
-  }
-  if (dom.btnTrainBgm) {
-    dom.btnTrainBgm.addEventListener('click', () => {
-      AppState.bgmEnabled = !AppState.bgmEnabled;
-      if (dom.toggleBgm) dom.toggleBgm.checked = AppState.bgmEnabled;
-      SoundscapeEngine.updateBgmMuteState();
-      dom.btnTrainBgm.textContent = AppState.bgmEnabled ? "🎵 背景音樂: 開" : "🔇 背景音樂: 關";
-      showToast(AppState.bgmEnabled ? "🎵 已開啟療癒背景音樂" : "🔇 已暫停背景音樂");
     });
   }
 
@@ -2613,9 +2214,6 @@ function setupEventListeners() {
       if (!AppState.isPaused) {
         AppState.isPaused = true;
         AppState.pauseStartTime = performance.now();
-        if (dom.interactiveVideo) dom.interactiveVideo.pause();
-        SoundscapeEngine.updateBgmMuteState();
-        SoundscapeEngine.setBlowingSFX(false);
         dom.btnPauseTrain.textContent = "▶️ 繼續訓練";
         showToast("⏸️ 訓練已暫停");
       } else {
@@ -2625,8 +2223,6 @@ function setupEventListeners() {
         AppState.training.cycleStartTime += pausedDuration;
         AppState.training.lastFrameTime = performance.now();
         AppState.isPaused = false;
-        if (AppState.displayMode === 'interactive' && dom.interactiveVideo) dom.interactiveVideo.play().catch(() => {});
-        SoundscapeEngine.updateBgmMuteState();
         dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
         showToast("▶️ 訓練繼續");
       }

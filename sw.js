@@ -3,7 +3,7 @@
  * Network-First strategy for local files + Precache for offline & Human Mode JPG assets
  */
 
-const CACHE_NAME = 'soothebreath-v5.0.0';
+const CACHE_NAME = 'soothebreath-v4.1.0';
 
 const PRECACHE_ASSETS = [
   './',
@@ -14,9 +14,7 @@ const PRECACHE_ASSETS = [
   './1.jpg',
   './2.jpg',
   './3.jpg',
-  './4.jpg',
-  './Dandelion.mp4',
-  './Pinwheel.mp4'
+  './4.jpg'
 ];
 
 self.addEventListener('install', (event) => {
