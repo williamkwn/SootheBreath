@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v6.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
+   v7.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
    ========================================================================== */
 
 :root {
@@ -193,15 +193,64 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none !important;
 }
 
-/* Calibration Video Box & Canvas Offline Resilience (v6.0) */
+/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v7.0) */
+#calib-step-workspace:not(.hidden) {
+  display: grid;
+  align-items: start;
+}
+
 #calib-video-box {
-  position: relative;
-  overflow: hidden;
-  aspect-ratio: 16 / 10;
-  min-height: 260px;
-  max-height: 60vh;
+  position: relative !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: clamp(230px, 40vh, 360px) !important;
+  max-height: 42vh !important;
   background-color: #0f172a;
   border-radius: 1rem;
+  z-index: 1 !important;
+  isolation: isolate !important;
+  box-sizing: border-box !important;
+}
+
+#calib-control-panel,
+#calib-confirm-overlay {
+  position: relative !important;
+  z-index: 20 !important;
+  min-width: 0 !important;
+}
+
+#debug-backdrop {
+  z-index: 90 !important;
+}
+
+#debug-drawer {
+  z-index: 100 !important;
+}
+
+/* Task B: Pure Guiding Mode (~40% Training Page Bubble & Human Demo Sizing) */
+.pure-guiding-ring {
+  width: clamp(250px, 40vmin, 420px) !important;
+  height: clamp(250px, 40vmin, 420px) !important;
+}
+
+.pure-guiding-ball {
+  width: clamp(180px, 28vmin, 300px) !important;
+  height: clamp(180px, 28vmin, 300px) !important;
+}
+
+.pure-guiding-ball #pacer-action-text {
+  font-size: clamp(1.15rem, 2.2vmin, 1.65rem) !important;
+}
+
+.pure-guiding-ball #pacer-seconds-text {
+  font-size: clamp(0.9rem, 1.7vmin, 1.2rem) !important;
+}
+
+.pure-guiding-human {
+  width: clamp(250px, 40vmin, 420px) !important;
+  height: clamp(250px, 40vmin, 420px) !important;
 }
 
 #calib-video,
