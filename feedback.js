@@ -1,14 +1,21 @@
 /**
  * 舒呼(SootheBreath) v7.0 ES6 Module — feedback.js
- * 最低分優先與「鎖定直到回升 ≥70%」平滑警示機制 (Sticky Priority Latch & Bottom Banner)
+ * 最低分優先 (<80% 需要改善) 與「連續 10 秒改善轉移 / 回升 ≥80% 解鎖」平滑警示機制 (Sticky Priority Latch)
  */
 
-import { STATES, PHASES, INITIAL_GRACE_SECONDS, AppState } from './state.js';
+import {
+  STATES,
+  PHASES,
+  INITIAL_GRACE_SECONDS,
+  PASSING_SCORE_PCT,
+  CONSECUTIVE_IMPROVE_SECONDS,
+  AppState
+} from './state.js';
 import { dom } from './dom.js';
 import { speakText } from './tts.js';
 
 // ============================================================================
-// 7. 鎖定平滑過渡警示機制與防閃爍提示引擎 (Section C.4 Sticky Priority Latch)
+// 7. 鎖定平滑過渡警示機制與防閃爍提示引擎 (Sticky Priority Latch & 10s Consecutive Improvement)
 // ============================================================================
 export function updateFeedbackBannerAndSpeech(priority, bannerMessage, ttsMessage = '') {
   const now = performance.now();
@@ -29,10 +36,11 @@ export function updateFeedbackBannerAndSpeech(priority, bannerMessage, ttsMessag
       fb.pendingPriority = priority;
       fb.pendingTimestamp = now;
     } else if (now - fb.pendingTimestamp >= fb.debounceMs) {
+      const prevPriority = fb.currentPriority;
       fb.currentPriority = priority;
       fb.currentPMessage = bannerMessage;
       renderBottomBanner(bannerMessage, priority);
-      if (priority <= 3 && (ttsMessage || bannerMessage)) {
+      if ((priority <= 3 || (prevPriority <= 3 && bannerMessage === "持續保持")) && (ttsMessage || bannerMessage)) {
         speakText(ttsMessage || bannerMessage);
       }
     }
@@ -60,15 +68,22 @@ export function renderBottomBanner(message, priority) {
 }
 
 /**
- * 【C.4 最低分優先與「鎖定直到回升 ≥ 70%」平滑警示機制 (Sticky Priority Latch)】
- * - 只有當某個項目百分比跌穿 70% (< 70%) 時才觸發底部橫幅與廣東話語音修正警示（未偵測到人臉/雙肩除外）。
- * - 若同時有多於一個項目低過 70%，根據「百分比分數最低」決定優先顯示。
- * - 一旦某個低分項目觸發警示，系統必須鎖定 (Latch) 該項目，中途不因其他項目波動而頻繁跳換；
- *   必須等到當前鎖定項目實時百分比回升至 >= 70% 後才解除鎖定，並平滑過渡檢查下一個 < 70% 最低分項目。
+ * 【訓練警示排程與連續 10 秒改善轉移機制 (Sticky Priority Latch v7.0)】
+ * 1. 開局前 10 秒緩衝期：預設顯示「統計中」，不觸發任何低分警示。
+ * 2. 80% 合格門檻：低於 80% (< 80%) 直接顯示「需要改善」（橙紅警示樣式，並納入警示排程）。
+ * 3. 連續 10 秒改善轉移：當使用者於當前鎖定項目連續 10 秒表現改善 (consecutiveImprovedSec >= 10s) 或總分回升至 >= 80%，
+ *    自動解除該項目鎖定並轉移提醒其他 < 80% 的「需要改善」項目；若所有其他項目均 >= 80%，則顯示「持續保持」。
  */
 export function evaluateStickyPriorityFeedback(hasFaceAndPose) {
   const train = AppState.training;
   const fb = AppState.feedback;
+
+  if (!fb.satisfiedBy10s) {
+    fb.satisfiedBy10s = { inhale: false, exhale: false, shoulder: false, rr: false };
+  }
+  if (!train.consecutiveImprovedSec) {
+    train.consecutiveImprovedSec = { inhale: 0, exhale: 0, shoulder: 0, rr: 0 };
+  }
 
   // 最高優先：鏡頭未偵測到完整人臉或雙肩
   if (!hasFaceAndPose) {
@@ -80,69 +95,92 @@ export function evaluateStickyPriorityFeedback(hasFaceAndPose) {
     return;
   }
 
-  // 開局前 10 秒緩衝期：預設顯示 100%，不觸發任何低分警示
-  if (train.elapsedSeconds < INITIAL_GRACE_SECONDS) {
+  // 【調整 1】開局前 10 秒緩衝期：預設顯示「統計中」，不觸發任何低分警示
+  if (train.elapsedSeconds < INITIAL_GRACE_SECONDS || train.isWarmingUp) {
     fb.latchedModule = null;
+    fb.latchedImprovedSec = 0;
     const graceMsg = train.currentPhase === PHASES.INHALE
-      ? "開局緩衝準備中：請跟隨節奏閉口用鼻吸氣，保持雙肩放鬆"
-      : "開局緩衝準備中：請跟隨節奏噘唇慢慢呼氣，保持雙肩放鬆";
+      ? "統計中 — 開局緩衝準備中：請跟隨節奏閉口用鼻吸氣，保持雙肩放鬆"
+      : "統計中 — 開局緩衝準備中：請跟隨節奏噘唇慢慢呼氣，保持雙肩放鬆";
     updateFeedbackBannerAndSpeech(5, graceMsg, "");
     return;
   }
 
-  // 四大模組狀態與對應修正指引
+  const pctIn = train.pctInhale ?? 100;
+  const pctEx = train.pctExhale ?? 100;
+  const pctSh = train.pctShoulder ?? 100;
+  const pctRr = train.pctRr ?? 100;
+
+  // 四大模組狀態與對應修正指引 (< 80% 納入需要改善排程)
   const modulesMap = {
     inhale: {
       key: 'inhale',
       label: '合口吸氣',
-      pct: train.pctInhale,
+      pct: pctIn,
       order: 2,
-      bannerMsg: `【合口吸氣 ${train.pctInhale}% · 需要改善】請閉上嘴巴，用鼻慢慢吸氣`,
+      bannerMsg: `【合口吸氣 ${pctIn}% · 需要改善】請閉上嘴巴，用鼻慢慢吸氣`,
       ttsMsg: '請閉上嘴巴，用鼻慢慢吸氣'
     },
     exhale: {
       key: 'exhale',
       label: '噘唇呼氣',
-      pct: train.pctExhale,
+      pct: pctEx,
       order: 3,
-      bannerMsg: `【噘唇呼氣 ${train.pctExhale}% · 需要改善】請將嘴唇噘起成吹蠟燭狀，慢慢吹氣出嚟`,
+      bannerMsg: `【噘唇呼氣 ${pctEx}% · 需要改善】請將嘴唇噘起成吹蠟燭狀，慢慢吹氣出嚟`,
       ttsMsg: '請將嘴唇噘起成吹口哨狀，慢慢吹氣出嚟'
     },
     shoulder: {
       key: 'shoulder',
       label: '沉肩放鬆',
-      pct: train.pctShoulder,
+      pct: pctSh,
       order: 1,
-      bannerMsg: `【沉肩放鬆 ${train.pctShoulder}% · 需要改善】偵測到聳肩用力，請保持雙肩下沉放鬆`,
+      bannerMsg: `【沉肩放鬆 ${pctSh}% · 需要改善】偵測到聳肩用力，請保持雙肩下沉放鬆`,
       ttsMsg: '偵測到聳肩用力，請沉肩放鬆'
     },
     rr: {
       key: 'rr',
       label: '呼吸速率',
-      pct: train.pctRr,
+      pct: pctRr,
       order: 4,
-      bannerMsg: `【呼吸速率 ${train.pctRr}% · 需要改善】請跟住導引節奏，保持平穩呼吸頻率`,
+      bannerMsg: `【呼吸速率 ${pctRr}% · 需要改善】請跟住導引節奏，保持平穩呼吸頻率`,
       ttsMsg: '請跟住導引節奏，保持平穩呼吸速度'
     }
   };
 
-  // 1. 檢查目前已鎖定 (Latched) 之項目是否已回升至 >= 70%
+  // 1. 檢查目前已鎖定 (Latched) 之項目是否已回升至 >= 80%，或已連續 10 秒表現改善
   if (fb.latchedModule && modulesMap[fb.latchedModule]) {
-    if (modulesMap[fb.latchedModule].pct >= 70) {
-      // 已回升至 >= 70%，解除鎖定！
+    const key = fb.latchedModule;
+    const modPct = modulesMap[key].pct;
+    const consecSec = train.consecutiveImprovedSec[key] || 0;
+    fb.latchedImprovedSec = consecSec;
+
+    if (modPct >= PASSING_SCORE_PCT) {
+      // 百分比已正式回升至 >= 80%，解除鎖定
+      fb.satisfiedBy10s[key] = false;
       fb.latchedModule = null;
+      fb.latchedImprovedSec = 0;
+    } else if (consecSec >= CONSECUTIVE_IMPROVE_SECONDS) {
+      // 【調整 3】使用者已連續 10 秒展現改善技巧，解除當前鎖定並轉移提醒其他需要改善項目
+      fb.satisfiedBy10s[key] = true;
+      fb.latchedModule = null;
+      fb.latchedImprovedSec = 0;
     }
   }
 
-  // 2. 若目前無鎖定項目，檢查是否有項目跌穿 70% (< 70%)，並取分數最低者鎖定
+  // 2. 若目前無鎖定項目，檢查是否有其他 < 80% 且尚未完成連續 10 秒改善之「需要改善」項目
   if (!fb.latchedModule) {
-    const lowModules = Object.values(modulesMap).filter(m => m.pct < 70);
+    const lowModules = Object.values(modulesMap).filter(
+      m => m.pct < PASSING_SCORE_PCT && !fb.satisfiedBy10s[m.key]
+    );
     if (lowModules.length > 0) {
       lowModules.sort((a, b) => {
         if (a.pct !== b.pct) return a.pct - b.pct; // 最低分優先
         return a.order - b.order;
       });
-      fb.latchedModule = lowModules[0].key;
+      const nextKey = lowModules[0].key;
+      fb.latchedModule = nextKey;
+      train.consecutiveImprovedSec[nextKey] = 0;
+      fb.latchedImprovedSec = 0;
     }
   }
 
@@ -151,16 +189,7 @@ export function evaluateStickyPriorityFeedback(hasFaceAndPose) {
     const activeWarning = modulesMap[fb.latchedModule];
     updateFeedbackBannerAndSpeech(2, activeWarning.bannerMsg, activeWarning.ttsMsg);
   } else {
-    // 全部項目均 >= 70%，恢復正向鼓勵提示
-    let positiveMsg = "做得好，繼續跟住節奏慢慢呼吸";
-    if (train.isSoftTransitioning) {
-      positiveMsg = "合格呼氣完成，平順過渡至下一次吸氣";
-    } else if (train.currentPhase === PHASES.INHALE) {
-      positiveMsg = "做得好，各項指標表現理想，繼續閉口用鼻吸氣";
-    } else {
-      positiveMsg = "噘唇嘴型與沉肩表現理想，繼續均勻慢慢呼氣";
-    }
-    updateFeedbackBannerAndSpeech(5, positiveMsg, "");
+    // 【調整 3】若所有其他項目均 >= 80%（或已完成連續 10 秒改善且無其他 < 80% 項目），顯示「持續保持」
+    updateFeedbackBannerAndSpeech(5, "持續保持", "持續保持");
   }
 }
-

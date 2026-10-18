@@ -91,17 +91,23 @@ export function updateDebugReadouts() {
   if (dom.dbgDistEs) dom.dbgDistEs.textContent = m.distCurr.toFixed(3);
   dom.dbgDeye.textContent = m.dEye.toFixed(3);
   if (dom.dbgTilt) dom.dbgTilt.textContent = m.shoulderTilt.toFixed(3);
-  if (dom.dbgRr) dom.dbgRr.textContent = `${AppState.training.avgRR.toFixed(1)} BPM (${AppState.training.pctRr}%)`;
+  if (dom.dbgRr) {
+    const rrLabel = AppState.training.pctRr === null ? '統計中' : `${AppState.training.pctRr}%`;
+    dom.dbgRr.textContent = `${AppState.training.avgRR.toFixed(1)} BPM (${rrLabel})`;
+  }
   if (dom.dbgLatch) {
     const latchNames = {
-      inhale: '合口吸氣 (<70%)',
-      exhale: '噘唇呼氣 (<70%)',
-      shoulder: '沉肩放鬆 (<70%)',
-      rr: '呼吸速率 (<70%)'
+      inhale: '合口吸氣 (<80%)',
+      exhale: '噘唇呼氣 (<80%)',
+      shoulder: '沉肩放鬆 (<80%)',
+      rr: '呼吸速率 (<80%)'
     };
+    const consecSec = AppState.feedback.latchedModule
+      ? ((AppState.training.consecutiveImprovedSec && AppState.training.consecutiveImprovedSec[AppState.feedback.latchedModule]) || 0).toFixed(1)
+      : '0.0';
     dom.dbgLatch.textContent = AppState.feedback.latchedModule
-      ? `🔒 鎖定中：${latchNames[AppState.feedback.latchedModule] || AppState.feedback.latchedModule}`
-      : '✅ 無鎖定 (全部 ≥70%)';
+      ? `🔒 鎖定中：${latchNames[AppState.feedback.latchedModule] || AppState.feedback.latchedModule} (連續改善 ${consecSec}s/10s)`
+      : '✅ 持續保持 (全部 ≥80%)';
   }
 }
 

@@ -157,6 +157,8 @@ export const HUMAN_IMAGES = {
 export const ROLLING_WINDOW_SECONDS = 20.0; // 最近 20 秒滾動時間窗
 export const INITIAL_GRACE_SECONDS = 10.0;  // 前 10 秒開局緩衝期
 export const PHASE_ENTRY_GRACE_MS = 400;    // 吸呼雙向階段切換前 400ms 生理反應緩衝期 (每階段僅觸發一次)
+export const PASSING_SCORE_PCT = 80;        // 合格達標門檻 80% (< 80% 直接顯示「需要改善」並納入警示排程)
+export const CONSECUTIVE_IMPROVE_SECONDS = 10.0; // 連續 10 秒表現改善後即轉移提醒其他需要改善項目
 
 // 確保 MediaPipe 視訊時間戳嚴格遞增
 let lastVideoTimestamp = 0;
@@ -348,11 +350,22 @@ export const AppState = {
     // 最近 20 秒滾動時間窗樣本佇列 (Section C.2)
     rollingWindow: [],
 
-    // 四大模組實時合格率 / 準確度百分比 (0% - 100%)
-    pctInhale: 100,
-    pctExhale: 100,
-    pctShoulder: 100,
-    pctRr: 100,
+    // 開局前 10 秒緩衝期狀態 (true 時顯示「統計中」而非 100%)
+    isWarmingUp: true,
+
+    // 四大模組實時合格率 / 準確度百分比 (0% - 100%，開局緩衝期為 null 顯示「統計中」)
+    pctInhale: null,
+    pctExhale: null,
+    pctShoulder: null,
+    pctRr: null,
+
+    // 各模組連續改善秒數累計 (滿 10 秒可轉移提醒其他 <80% 需要改善項目)
+    consecutiveImprovedSec: {
+      inhale: 0,
+      exhale: 0,
+      shoulder: 0,
+      rr: 0
+    },
 
     // 全程統計指標 (供 STATE_SUMMARY 報告計算全程總平均)
     cyclesHistory: [],
@@ -370,10 +383,17 @@ export const AppState = {
     validShoulderTimeSec: 0
   },
 
-  // 鎖定平滑過渡警示機制 (Sticky Priority Latch) 與 800ms 防閃爍佇列 (Section C.4)
+  // 鎖定平滑過渡警示機制 (Sticky Priority Latch · <80% 警示與連續 10 秒改善轉移)
   feedback: {
     latchedModule: null,       // null | 'inhale' | 'exhale' | 'shoulder' | 'rr'
-    currentPMessage: '做得好，繼續跟住節奏慢慢呼吸',
+    latchedImprovedSec: 0,     // 當前鎖定項目已連續改善之秒數 (滿 10 秒轉移)
+    satisfiedBy10s: {          // 已透過連續 10 秒改善而解除鎖定之項目
+      inhale: false,
+      exhale: false,
+      shoulder: false,
+      rr: false
+    },
+    currentPMessage: '持續保持',
     currentPriority: 5,
     pendingPriority: 5,
     pendingMessage: '',
