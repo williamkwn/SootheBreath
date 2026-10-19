@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — tts.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — tts.js
  * 廣東話 (zh-HK) Web Speech API 語音導航引擎 (Cantonese TTS Navigation)
  */
 

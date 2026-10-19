@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v7.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
+   v8.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
    ========================================================================== */
 
 :root {
@@ -193,7 +193,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none !important;
 }
 
-/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v7.0) */
+/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v8.0) */
 #calib-step-workspace:not(.hidden) {
   display: grid;
   align-items: start;
@@ -214,11 +214,26 @@ input[type="range"]::-webkit-slider-thumb:hover {
   box-sizing: border-box !important;
 }
 
-#calib-control-panel,
+#calib-control-panel {
+  position: relative !important;
+  z-index: 20 !important;
+  min-width: 0 !important;
+  height: clamp(230px, 40vh, 360px) !important;
+  max-height: 42vh !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
 #calib-confirm-overlay {
   position: relative !important;
   z-index: 20 !important;
   min-width: 0 !important;
+}
+
+#calib-video-overlay:not(.hidden) {
+  display: flex !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 #debug-backdrop {

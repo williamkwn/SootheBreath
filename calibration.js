@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — calibration.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — calibration.js
  * 五步個人化動態基準校準系統 (5-Step Personalized Dynamic Baseline Calibration)
  */
 
@@ -143,19 +143,22 @@ export function enterCalibrationStepWaiting(stepNum) {
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "等待確認";
-    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-teal-800";
+    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-teal-800 leading-none h-10 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
-    dom.calibStepStateLabel.textContent = `請指導病人擺好【${cfg.shortName}】動作，確認後點擊下方綠色按鈕開始 3 秒採集`;
+    dom.calibStepStateLabel.textContent = `請指導病人擺好【${cfg.shortName}】動作，點擊左側視訊畫面中央綠色按鈕開始 3 秒採集`;
   }
-  if (dom.calibStepTimerBarWrap) dom.calibStepTimerBarWrap.classList.add('hidden');
+  if (dom.calibStepTimerBarWrap) dom.calibStepTimerBarWrap.classList.add('invisible');
   if (dom.calibStepTimerBar) dom.calibStepTimerBar.style.width = '0%';
   if (dom.calibStepResultBox) {
     dom.calibStepResultBox.classList.add('hidden');
     dom.calibStepResultBox.innerHTML = '';
   }
 
-  // 按鈕狀態切換：顯示「確定開始採集」與「使用預設值並跳至下一步」
+  // 視訊畫面加上毛玻璃模糊遮罩，並於視訊正前方顯示綠色「確定開始採集」按鈕
+  if (dom.calibVideoOverlay) {
+    dom.calibVideoOverlay.classList.remove('hidden');
+  }
   if (dom.btnCalibConfirmStep) {
     dom.btnCalibConfirmStep.classList.remove('hidden');
     dom.btnCalibConfirmStep.disabled = false;
@@ -239,17 +242,23 @@ export function startStep3sCountdown() {
 
   updateCalibrationStepperUI(stepIdx, 'COUNTDOWN');
 
+  // 點擊「確定採集」後移除視訊模糊層並隱藏按鈕（倒數期間不顯示「採集數據中」按鈕）
+  if (dom.calibVideoOverlay) {
+    dom.calibVideoOverlay.classList.add('hidden');
+  }
   if (dom.btnCalibConfirmStep) {
-    dom.btnCalibConfirmStep.disabled = true;
-    dom.btnCalibConfirmStep.textContent = "⏳ 正在採集數據中 (請保持動作)...";
+    dom.btnCalibConfirmStep.classList.add('hidden');
+  }
+  if (dom.btnCalibNextStep) {
+    dom.btnCalibNextStep.classList.add('hidden');
   }
   if (dom.calibStepResultBox) dom.calibStepResultBox.classList.add('hidden');
-  if (dom.calibStepTimerBarWrap) dom.calibStepTimerBarWrap.classList.remove('hidden');
+  if (dom.calibStepTimerBarWrap) dom.calibStepTimerBarWrap.classList.remove('invisible');
   if (dom.calibStepTimerBar) dom.calibStepTimerBar.style.width = '10%';
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "3";
-    dom.calibCountdown.className = "text-5xl md:text-6xl font-black text-[#FF7043] drop-shadow-xs";
+    dom.calibCountdown.className = "text-3xl md:text-4xl font-black text-[#FF7043] leading-none h-10 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
     dom.calibStepStateLabel.textContent = `正在採集【${cfg.shortName}】個人基準數據，請保持動作 3 秒...`;
@@ -380,16 +389,21 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "完成";
-    dom.calibCountdown.className = "text-3xl md:text-4xl font-black text-[#2E7D32]";
+    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-[#2E7D32] leading-none h-10 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
-    dom.calibStepStateLabel.textContent = `第 ${stepIdx} 步採集完成！可點擊「下一步」繼續，或「🔄 重測此動作」`;
+    dom.calibStepStateLabel.textContent = `第 ${stepIdx} 步採集完成！請點擊左側視訊畫面中央「下一步」繼續，或點擊下方重測`;
   }
+  // 採集完成後不顯示額外之「採集成功」綠底標籤框，確保右側面板高度固定不變
   if (dom.calibStepResultBox) {
-    dom.calibStepResultBox.innerHTML = summaryHtml;
-    dom.calibStepResultBox.classList.remove('hidden');
+    dom.calibStepResultBox.innerHTML = '';
+    dom.calibStepResultBox.classList.add('hidden');
   }
 
+  // 重新模糊視訊畫面，並於視訊正前方顯示綠色「下一步」按鈕
+  if (dom.calibVideoOverlay) {
+    dom.calibVideoOverlay.classList.remove('hidden');
+  }
   if (dom.btnCalibConfirmStep) dom.btnCalibConfirmStep.classList.add('hidden');
   if (dom.btnCalibNextStep) {
     dom.btnCalibNextStep.classList.remove('hidden');

@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — cvEngine.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — cvEngine.js
  * 核心電腦視覺幾何運算、臨床生物力學判定公式與免鏡頭模擬器 (Core CV Math & Clinical Algorithms)
  */
 

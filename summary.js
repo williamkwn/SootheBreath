@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — summary.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — summary.js
  * 訓練總結報告生成、去識別化 CSV 匯出與本機歷史紀錄 (Summary Report, CSV Export & Local History)
  */
 
@@ -68,7 +68,7 @@ export function exportDeidentifiedCSV() {
   const shoulderAcc = train.totalShoulderFrames > 0 ? Math.round((train.validShoulderFrames / train.totalShoulderFrames) * 100) : 96;
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v7.0) — 匿名臨床數據報表 ===\n";
+  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v8.0) — 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;

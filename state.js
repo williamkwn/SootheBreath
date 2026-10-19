@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v7.0)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v8.0)
  * ESM Core Engine: MediaPipe Tasks Vision 0.10.14
  *
  * v6.0 核心升級項目：
@@ -350,21 +350,27 @@ export const AppState = {
     // 最近 20 秒滾動時間窗樣本佇列 (Section C.2)
     rollingWindow: [],
 
-    // 開局前 10 秒緩衝期狀態 (true 時顯示「統計中」而非 100%)
+    // 開局前 10 秒緩衝期狀態 (期間保持累計百分比運算開啟，但不觸發任何警示或成功橫幅)
     isWarmingUp: true,
 
-    // 四大模組實時合格率 / 準確度百分比 (0% - 100%，開局緩衝期為 null 顯示「統計中」)
-    pctInhale: null,
-    pctExhale: null,
-    pctShoulder: null,
-    pctRr: null,
+    // 四大模組全程累計時間百分比 (Cumulative Total Time Percentage: 0% - 100%)
+    pctInhale: 100,
+    pctExhale: 100,
+    pctShoulder: 100,
+    pctRr: 100,
 
-    // 各模組連續改善秒數累計 (滿 10 秒可轉移提醒其他 <80% 需要改善項目)
-    consecutiveImprovedSec: {
-      inhale: 0,
-      exhale: 0,
-      shoulder: 0,
-      rr: 0
+    // 單一階段錯誤時間累計器 (Phase-End Evaluation: errorTime > 50% -> Phase_Fail)
+    phaseAccum: {
+      inhale: { totalTime: 0, errorTime: 0 },
+      exhale: { totalTime: 0, errorTime: 0 },
+      shoulder: { totalTime: 0, errorTime: 0 }
+    },
+
+    // 連續失敗計數與「需要改善排程」(Alert Schedule: consecutiveFails >= 2 觸發; 連續 2 次 Pass 解鎖)
+    alertSchedule: {
+      inhale: { key: 'inhale', label: '合口吸氣', consecutiveFails: 0, consecutivePasses: 0, inAlertSchedule: false, lastPhaseResult: 'PASS', order: 2 },
+      exhale: { key: 'exhale', label: '噘唇呼氣', consecutiveFails: 0, consecutivePasses: 0, inAlertSchedule: false, lastPhaseResult: 'PASS', order: 3 },
+      shoulder: { key: 'shoulder', label: '沉肩放鬆', consecutiveFails: 0, consecutivePasses: 0, inAlertSchedule: false, lastPhaseResult: 'PASS', order: 1 }
     },
 
     // 全程統計指標 (供 STATE_SUMMARY 報告計算全程總平均)

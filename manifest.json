@@ -1,7 +1,7 @@
 {
   "name": "舒呼(SootheBreath) 呼吸復康訓練",
   "short_name": "舒呼 SootheBreath",
-  "description": "舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 Progressive Web App (v7.0)",
+  "description": "舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 Progressive Web App (v8.0)",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",

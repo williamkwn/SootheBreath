@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — vision.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — vision.js
  * MediaPipe Tasks Vision 0.10.14 ESM 模型載入與初始化 (Vision Engine Initialization)
  */
 

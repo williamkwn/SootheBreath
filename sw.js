@@ -1,9 +1,9 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 Service Worker (sw.js v7.0.0)
+ * 舒呼(SootheBreath) 呼吸復康訓練 Service Worker (sw.js v8.0.0)
  * Network-First strategy for local files + Precache for offline & Human Mode JPG assets
  */
 
-const CACHE_NAME = 'soothebreath-v7.0.0';
+const CACHE_NAME = 'soothebreath-v8.0.0';
 
 const PRECACHE_ASSETS = [
   './',
@@ -15,6 +15,7 @@ const PRECACHE_ASSETS = [
   './vision.js',
   './camera.js',
   './cvEngine.js',
+  './scoring.js',
   './tts.js',
   './feedback.js',
   './calibration.js',

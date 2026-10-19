@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v7.0 ES6 Modular Edition)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v8.0 ES6 Modular Edition)
  * Main Entry Point (app.js)
  *
  * 模組化架構 (ES6 Modules Architecture):
@@ -30,6 +30,7 @@ export * from './dom.js';
 export * from './vision.js';
 export * from './camera.js';
 export * from './cvEngine.js';
+export * from './scoring.js';
 export * from './tts.js';
 export * from './feedback.js';
 export * from './calibration.js';

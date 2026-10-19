@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — dom.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — dom.js
  * DOM 元素快取與非阻塞式提示通知 (DOM Element References & Toast Utility)
  */
 
@@ -56,6 +56,7 @@ export function cacheDomElements() {
     calibLiveReadout: document.getElementById('calib-live-readout'),
     calibStepWorkspace: document.getElementById('calib-step-workspace'),
     calibVideoBox: document.getElementById('calib-video-box'),
+    calibVideoOverlay: document.getElementById('calib-video-overlay'),
     calibTitle: document.getElementById('calib-title'),
     calibSubtitle: document.getElementById('calib-subtitle'),
     calibTargetMetricsDesc: document.getElementById('calib-target-metrics-desc'),

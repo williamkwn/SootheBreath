@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — camera.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — camera.js
  * WebRTC 相機串流管理與臨床權限/硬體診斷 (WebRTC Camera & Diagnostics)
  */
 

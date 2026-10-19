@@ -41,11 +41,11 @@
   </script>
   
   <!-- Style Sheet (with v=6.0 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=7.0">
+  <link rel="stylesheet" href="style.css?v=8.0">
   <style>
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v7.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
+   v8.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
    ========================================================================== */
 
 :root {
@@ -238,7 +238,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none !important;
 }
 
-/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v7.0) */
+/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v8.0) */
 #calib-step-workspace:not(.hidden) {
   display: grid;
   align-items: start;
@@ -259,11 +259,26 @@ input[type="range"]::-webkit-slider-thumb:hover {
   box-sizing: border-box !important;
 }
 
-#calib-control-panel,
+#calib-control-panel {
+  position: relative !important;
+  z-index: 20 !important;
+  min-width: 0 !important;
+  height: clamp(230px, 40vh, 360px) !important;
+  max-height: 42vh !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
 #calib-confirm-overlay {
   position: relative !important;
   z-index: 20 !important;
   min-width: 0 !important;
+}
+
+#calib-video-overlay:not(.hidden) {
+  display: flex !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 #debug-backdrop {
@@ -328,9 +343,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
       <div>
         <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
           舒呼(SootheBreath) 呼吸復康訓練
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v7.0</span>
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v8.0</span>
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">五步個人化基準校準 · 四大實時百分比反饋 · 軀幹耳肩穩定監測</p>
       </div>
     </div>
 
@@ -366,9 +380,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
             🌿 慢性阻塞性肺病 (COPD) 臨床呼吸復康系統
           </div>
           <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">舒呼(SootheBreath) 呼吸復康訓練</h2>
-          <p class="text-slate-500 text-xs md:text-sm leading-relaxed max-w-2xl mx-auto">
-            配備五步個人化動態基準校準系統，結合節奏球與真人呼吸示範，實時計算合口吸氣、噘唇呼氣、沉肩放鬆及呼吸速率四大百分比指標。
-          </p>
         </div>
 
         <!-- Privacy Shield Banner -->
@@ -536,7 +547,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
         <!-- Workspace A: Active 5-Step Capture View (Camera Preview + Therapist Controls) -->
         <div id="calib-step-workspace" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
           
-          <!-- Left (7 cols): Live Camera / Skeleton & Lip Preview + Real-Time Metric Readout -->
+          <!-- Left (7 cols): Live Camera / Skeleton & Lip Preview + Blur Overlay with Green Action Buttons -->
           <div id="calib-video-box" class="md:col-span-6 lg:col-span-7 w-full min-w-0 max-w-full relative bg-slate-900 rounded-2xl overflow-hidden border-2 border-teal-200 shadow-lg flex items-center justify-center isolate z-0">
             <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
             <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
@@ -554,59 +565,60 @@ input[type="range"]::-webkit-slider-thumb:hover {
               <div class="w-56 md:w-64 h-8 border-t-2 border-x-2 border-[#4DB6AC]/70 rounded-t-3xl bg-[#4DB6AC]/5"></div>
             </div>
 
+            <!-- Blur Layer & Primary Green Action Buttons in Front of Webcam Screen -->
+            <div id="calib-video-overlay" class="absolute inset-0 z-30 bg-slate-900/50 backdrop-blur-md flex flex-col items-center justify-center p-6 transition-all duration-200">
+              <button id="btn-calib-confirm-step" type="button" class="py-3.5 px-7 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-xl transition transform active:scale-95 cursor-pointer">
+                ✅ 確定開始採集此動作 (3 秒倒數)
+              </button>
+              <button id="btn-calib-next-step" type="button" class="hidden py-3.5 px-7 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-xl transition transform active:scale-95 cursor-pointer">
+                ➡️ 下一步
+              </button>
+            </div>
+
             <!-- Bottom Live Key Metrics Readout Bar -->
             <div id="calib-live-readout" class="absolute bottom-3 left-3 right-3 z-20 px-3.5 py-2 rounded-xl bg-slate-950/85 text-teal-200 font-mono text-xs font-bold border border-teal-500/30 backdrop-blur text-center truncate">
               即時指標預覽 · LAR: 0.035 | jawOpen: 0.015 | D_eye: 0.220
             </div>
           </div>
 
-          <!-- Right (5 cols): Therapist Confirmation & Step Action Card -->
-          <div id="calib-control-panel" class="md:col-span-6 lg:col-span-5 w-full min-w-0 relative z-20 bg-[#f8fbfd] rounded-2xl border border-slate-200 p-4 md:p-5 flex flex-col justify-between space-y-4 shadow-sm">
-            <div class="space-y-3">
+          <!-- Right (5 cols): Fixed-Size Therapist Guidance & Countdown Panel -->
+          <div id="calib-control-panel" class="md:col-span-6 lg:col-span-5 w-full min-w-0 relative z-20 bg-[#f8fbfd] rounded-2xl border border-slate-200 p-4 md:p-5 flex flex-col justify-between shadow-sm">
+            <div class="space-y-2">
               <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
                 🩺 治療師引導與確認面板
               </div>
-              <h3 id="calib-title" class="text-lg md:text-xl font-extrabold text-slate-800 leading-snug">
+              <h3 id="calib-title" class="text-base md:text-lg font-extrabold text-slate-800 leading-snug truncate">
                 第 1 步【閉嘴】：自然閉上嘴巴
               </h3>
-              <p id="calib-subtitle" class="text-xs md:text-sm text-slate-600 leading-relaxed">
+              <p id="calib-subtitle" class="text-xs text-slate-600 leading-relaxed line-clamp-2 min-h-[2.25rem]">
                 請指導病人自然坐直、閉上嘴巴，面部正對鏡頭，系統將採集個人閉口基準與雙眼間距。
               </p>
-              <div id="calib-target-metrics-desc" class="text-[11px] font-mono bg-white p-2.5 rounded-xl border border-slate-200 text-slate-600">
+              <div id="calib-target-metrics-desc" class="text-[11px] font-mono bg-white p-2 rounded-xl border border-slate-200 text-slate-600 truncate">
                 採集指標：個人閉口嘴唇比 (LAR_closed)、下頜閉合基準 (jawOpen_closed)、雙眼間距 (D_eye)
               </div>
 
-              <!-- Countdown / Status Box -->
-              <div class="bg-white rounded-2xl border border-teal-100 p-4 text-center space-y-2 shadow-2xs">
-                <div id="calib-countdown" class="text-2xl md:text-3xl font-black text-teal-800">
+              <!-- Fixed-Height Countdown / Status Box (Never changes size during 3-2-1 countdown) -->
+              <div class="bg-white rounded-2xl border border-teal-100 px-3 py-2.5 text-center h-[108px] flex flex-col items-center justify-between shadow-2xs overflow-hidden">
+                <div id="calib-countdown" class="text-2xl md:text-3xl font-black text-teal-800 leading-none h-10 flex items-center justify-center">
                   等待確認
                 </div>
-                <p id="calib-step-state-label" class="text-xs text-slate-500 font-medium">
-                  請指導病人擺好【閉嘴】動作，確認後點擊下方綠色按鈕開始 3 秒採集
+                <p id="calib-step-state-label" class="text-[11px] text-slate-500 font-medium leading-tight line-clamp-1">
+                  請指導病人擺好【閉嘴】動作，點擊左側視訊畫面中央綠色按鈕開始 3 秒採集
                 </p>
-                <div id="calib-step-timer-bar-wrap" class="hidden w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                <div id="calib-step-timer-bar-wrap" class="invisible w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200 shrink-0">
                   <div id="calib-step-timer-bar" class="h-full bg-[#FF7043] transition-all duration-100" style="width: 0%;"></div>
                 </div>
-                <div id="calib-step-result-box" class="hidden text-xs font-mono bg-emerald-50/90 text-emerald-900 p-2.5 rounded-xl border border-emerald-200 text-left leading-relaxed">
-                </div>
+                <div id="calib-step-result-box" class="hidden"></div>
               </div>
             </div>
 
-            <!-- Therapist Action Buttons -->
-            <div class="space-y-2 pt-1">
-              <button id="btn-calib-confirm-step" type="button" class="w-full py-3 px-4 rounded-xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm shadow-md transition cursor-pointer">
-                ✅ 確定開始採集此動作 (3 秒倒數)
-              </button>
-
-              <button id="btn-calib-next-step" type="button" class="hidden w-full py-3 px-4 rounded-xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm shadow-md transition cursor-pointer">
-                ➡️ 下一步
-              </button>
-
+            <!-- Secondary Therapist Action Buttons (Retest / Previous / Default Fallback) -->
+            <div class="space-y-1.5 pt-1 shrink-0">
               <div class="flex gap-2">
-                <button id="btn-calib-retest-step" type="button" class="hidden flex-1 py-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
+                <button id="btn-calib-retest-step" type="button" class="hidden flex-1 py-1.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
                   🔄 重測此動作
                 </button>
-                <button id="btn-calib-prev-step" type="button" class="hidden flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer">
+                <button id="btn-calib-prev-step" type="button" class="hidden flex-1 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer">
                   ⬅️ 返回上一步
                 </button>
               </div>
@@ -764,51 +776,51 @@ input[type="range"]::-webkit-slider-thumb:hover {
           <div id="biofeedback-cards-grid" class="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5">
             
             <!-- Module 1: 合口吸氣 -->
-            <div id="card-status-inhale" class="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+            <div id="card-status-inhale" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">👃</div>
                 <div>
                   <div class="text-xs text-slate-600 font-bold">合口吸氣</div>
-                  <div id="text-inhale-state" class="text-xs md:text-sm font-extrabold text-slate-500">統計中</div>
+                  <div id="text-inhale-state" class="text-xs md:text-sm font-extrabold text-[#2E7D32]">合格達標</div>
                 </div>
               </div>
-              <div id="badge-inhale-pct" class="text-xl md:text-2xl font-black font-mono text-slate-500">統計中</div>
+              <div id="badge-inhale-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
             <!-- Module 2: 噘唇呼氣 -->
-            <div id="card-status-exhale" class="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+            <div id="card-status-exhale" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">👄</div>
                 <div>
                   <div class="text-xs text-slate-600 font-bold">噘唇呼氣</div>
-                  <div id="text-exhale-state" class="text-xs md:text-sm font-extrabold text-slate-500">統計中</div>
+                  <div id="text-exhale-state" class="text-xs md:text-sm font-extrabold text-[#2E7D32]">合格達標</div>
                 </div>
               </div>
-              <div id="badge-exhale-pct" class="text-xl md:text-2xl font-black font-mono text-slate-500">統計中</div>
+              <div id="badge-exhale-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
             <!-- Module 3: 沉肩放鬆 -->
-            <div id="card-status-shoulder" class="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+            <div id="card-status-shoulder" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">🧘</div>
                 <div>
                   <div class="text-xs text-slate-600 font-bold">沉肩放鬆</div>
-                  <div id="text-shoulder-state" class="text-xs md:text-sm font-extrabold text-slate-500">統計中</div>
+                  <div id="text-shoulder-state" class="text-xs md:text-sm font-extrabold text-[#2E7D32]">合格達標</div>
                 </div>
               </div>
-              <div id="badge-shoulder-pct" class="text-xl md:text-2xl font-black font-mono text-slate-500">統計中</div>
+              <div id="badge-shoulder-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
             <!-- Module 4: 呼吸速率 -->
-            <div id="card-status-rr" class="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 flex items-center justify-between transition-all shadow-sm">
+            <div id="card-status-rr" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">🫁</div>
                 <div>
                   <div class="text-xs text-slate-600 font-bold">呼吸速率</div>
-                  <div id="text-rr-state" class="text-xs md:text-sm font-extrabold text-slate-500">統計中</div>
+                  <div id="text-rr-state" class="text-xs md:text-sm font-extrabold text-[#2E7D32]">合格達標</div>
                 </div>
               </div>
-              <div id="badge-rr-pct" class="text-xl md:text-2xl font-black font-mono text-slate-500">統計中</div>
+              <div id="badge-rr-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
           </div>
@@ -830,7 +842,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     <!-- High-Contrast Bottom Feedback Banner -->
     <!-- ========================================== -->
     <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-teal-200 bg-white/95 text-[#2E7D32]">
-      做得好，繼續跟住節奏慢慢呼吸
+      ✅ 做得非常好，繼續保持！
     </div>
 
     <!-- ========================================== -->
@@ -1084,16 +1096,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'soothebreath-v7.0.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v8.0.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=7.0')
+        navigator.serviceWorker.register('sw.js?v=8.0')
           .then(reg => {
             reg.update();
-            console.log('舒呼 SootheBreath PWA Service Worker v7.0 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v8.0 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -1101,6 +1113,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   </script>
 
   <!-- Load ES6 Modular JavaScript Application Entry Point -->
-  <script type="module" src="./app.js?v=7.0"></script>
+  <script type="module" src="./app.js?v=8.0"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — training.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — training.js
  * 實時訓練主迴圈、20 秒滾動時間窗四大百分比指標與呼吸節奏導引 (Real-Time Training & Biofeedback)
  */
 
@@ -32,6 +32,12 @@ import {
   generateSimulatedDetections
 } from './cvEngine.js';
 import { speakText } from './tts.js';
+import {
+  resetScoringState,
+  accumulateFrameScore,
+  evaluateCompletedPhase,
+  getHighestPriorityAlert
+} from './scoring.js';
 import { evaluateStickyPriorityFeedback } from './feedback.js';
 import { switchViewState, updateDebugReadouts } from './uiControls.js';
 
@@ -67,42 +73,16 @@ export async function runTrainingSequence() {
   AppState.training.tInActual = 0;
   AppState.training.tExActual = 0;
   AppState.training.avgRR = targetRR;
-  AppState.training.rollingWindow = [];
   AppState.training.isWarmingUp = true;
-  AppState.training.pctInhale = null;
-  AppState.training.pctExhale = null;
-  AppState.training.pctShoulder = null;
-  AppState.training.pctRr = null;
-  AppState.training.consecutiveImprovedSec = {
-    inhale: 0,
-    exhale: 0,
-    shoulder: 0,
-    rr: 0
-  };
-  AppState.training.totalInhaleFrames = 0;
-  AppState.training.validInhaleFrames = 0;
-  AppState.training.totalExhaleFrames = 0;
-  AppState.training.validPlbExhaleFrames = 0;
-  AppState.training.totalShoulderFrames = 0;
-  AppState.training.validShoulderFrames = 0;
-  AppState.training.totalInhaleTimeSec = 0;
-  AppState.training.validInhaleTimeSec = 0;
-  AppState.training.totalExhaleTimeSec = 0;
-  AppState.training.validPlbExhaleTimeSec = 0;
-  AppState.training.totalShoulderTimeSec = 0;
-  AppState.training.validShoulderTimeSec = 0;
+  resetScoringState();
 
   AppState.feedback.latchedModule = null;
-  AppState.feedback.latchedImprovedSec = 0;
-  AppState.feedback.satisfiedBy10s = {
-    inhale: false,
-    exhale: false,
-    shoulder: false,
-    rr: false
-  };
   AppState.feedback.currentPriority = 5;
-  AppState.feedback.currentPMessage = '統計中';
+  AppState.feedback.currentPMessage = '';
   AppState.feedback.pendingMessage = '';
+  if (dom.bottomBanner) {
+    dom.bottomBanner.classList.add('hidden');
+  }
 
   if (dom.btnPauseTrain) {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
@@ -420,18 +400,8 @@ export function processFrameDetections(faceResult, poseResult, now = performance
   inhaleScore = applyActionMomentumExemption(PHASES.INHALE, inhaleScore, m.deltaLar, m.deltaMouthPucker);
   exhaleScore = applyActionMomentumExemption(PHASES.EXHALE, exhaleScore, m.deltaLar, m.deltaMouthPucker);
 
-  // 全程沉肩統計累計 (時間加權 dt)
-  train.totalShoulderFrames++;
-  train.totalShoulderTimeSec += dt;
-  train.validShoulderTimeSec += shoulderScore * dt;
-  if (isShoulderRelaxed) {
-    train.validShoulderFrames++;
-  }
-
-  let currentPhaseScore = 1.0;
-
   if (train.currentPhase === PHASES.INHALE) {
-    // 【C.4 雙向 400ms 階段轉換緩衝期 — 吸氣開頭 400ms，每週期嚴格僅觸發一次】
+    // 【雙向 400ms 階段轉換緩衝期 — 吸氣開頭 400ms，每週期嚴格僅觸發一次】
     if (!train.inhaleGraceCompleted) {
       if (train.inhaleGraceCycleTriggered === train.cycleIndex && (now - train.inhaleEntryTimestamp) <= PHASE_ENTRY_GRACE_MS) {
         inhaleScore = 1.0;
@@ -439,22 +409,10 @@ export function processFrameDetections(faceResult, poseResult, now = performance
         train.inhaleGraceCompleted = true;
       }
     }
-
     m.inhaleScore = inhaleScore;
-    currentPhaseScore = inhaleScore;
-
-    train.totalInhaleFrames++;
-    train.totalInhaleTimeSec += dt;
-    train.validInhaleTimeSec += inhaleScore * dt;
-    if (inhaleScore >= 0.70) {
-      train.validInhaleFrames++;
-      if (isShoulderRelaxed) {
-        train.tInActual += inhaleScore * dt;
-      }
-    }
   } else {
     // 呼氣階段 (EXHALE)
-    // 【C.4 雙向 400ms 階段轉換緩衝期 — 呼氣開頭 400ms，每週期嚴格僅觸發一次】
+    // 【雙向 400ms 階段轉換緩衝期 — 呼氣開頭 400ms，每週期嚴格僅觸發一次】
     if (!train.exhaleGraceCompleted) {
       if (train.exhaleGraceCycleTriggered === train.cycleIndex && (now - train.exhaleEntryTimestamp) <= PHASE_ENTRY_GRACE_MS) {
         exhaleScore = 1.0;
@@ -462,9 +420,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
         train.exhaleGraceCompleted = true;
       }
     }
-
-    train.totalExhaleFrames++;
-    train.totalExhaleTimeSec += dt;
 
     const phaseElapsed = (now - train.phaseStartTime) / 1000;
     const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
@@ -484,146 +439,28 @@ export function processFrameDetections(faceResult, poseResult, now = performance
     if (train.isSoftTransitioning || (isOver70Pct && isGoodPlbDuration)) {
       exhaleScore = 1.0;
     }
-
     m.exhaleScore = exhaleScore;
-    currentPhaseScore = exhaleScore;
-
-    train.validPlbExhaleTimeSec += exhaleScore * dt;
-    if (exhaleScore >= 0.70) {
-      train.validPlbExhaleFrames++;
-      train.tExActual += exhaleScore * dt;
-    }
   }
 
   // ==========================================================================
-  // 【C.3 時間加權 (dt) 20 秒滾動時間窗】weightedScore = Σ(score_i * dt_i) / Σ(dt_i)
+  // 【v8.0 核心規格 1】全程累計時間百分比運算 (Cumulative Total Time Percentage)
+  // 公式: Percentage = (Σ validTime / Σ totalTime) * 100
+  // 開局前 10 秒緩衝期照常開啟計算並顯示於卡片，供治療師即時追蹤整體表現
   // ==========================================================================
-  const elapsedSec = train.elapsedSeconds;
-  train.rollingWindow.push({
-    t: elapsedSec,
-    dt: dt,
-    phase: train.currentPhase,
-    score: currentPhaseScore,
-    inhaleScore: inhaleScore,
-    exhaleScore: exhaleScore,
-    shoulderScore: shoulderScore,
-    inhaleValid: inhaleScore >= 0.70,
-    exhaleValid: exhaleScore >= 0.70,
-    shoulderValid: shoulderScore >= 0.70
-  });
+  train.isWarmingUp = (train.elapsedSeconds < INITIAL_GRACE_SECONDS);
+  accumulateFrameScore(
+    train.currentPhase,
+    dt,
+    inhaleScore,
+    exhaleScore,
+    shoulderScore,
+    isShoulderRelaxed
+  );
 
-  // 移除超過 20 秒以前之舊樣本
-  const cutoffTime = elapsedSec - ROLLING_WINDOW_SECONDS;
-  while (train.rollingWindow.length > 0 && train.rollingWindow[0].t < cutoffTime) {
-    train.rollingWindow.shift();
-  }
-
-  if (elapsedSec < INITIAL_GRACE_SECONDS) {
-    // 【調整 1】訓練開始前 10 秒開局緩衝期：預設顯示「統計中」而非 100%
-    train.isWarmingUp = true;
-    train.pctInhale = null;
-    train.pctExhale = null;
-    train.pctShoulder = null;
-    train.pctRr = null;
-  } else {
-    train.isWarmingUp = false;
-    let winInDtSum = 0;
-    let winInWeightedSum = 0;
-    let winExDtSum = 0;
-    let winExWeightedSum = 0;
-    let winShDtSum = 0;
-    let winShWeightedSum = 0;
-
-    for (let i = 0; i < train.rollingWindow.length; i++) {
-      const s = train.rollingWindow[i];
-      const itemDt = s.dt;
-      const shScore = (typeof s.shoulderScore === 'number') ? s.shoulderScore : (s.shoulderValid ? 1.0 : 0.0);
-      winShDtSum += itemDt;
-      winShWeightedSum += shScore * itemDt;
-
-      if (s.phase === PHASES.INHALE) {
-        const inScore = (typeof s.inhaleScore === 'number') ? s.inhaleScore : (s.inhaleValid ? 1.0 : 0.0);
-        winInDtSum += itemDt;
-        winInWeightedSum += inScore * itemDt;
-      } else {
-        const exScore = (typeof s.exhaleScore === 'number') ? s.exhaleScore : (s.exhaleValid ? 1.0 : 0.0);
-        winExDtSum += itemDt;
-        winExWeightedSum += exScore * itemDt;
-      }
-    }
-
-    // 模組 1【合口吸氣】時間加權百分比: Σ(score_i * dt_i) / Σ(dt_i)
-    if (winInDtSum >= 0.25) {
-      train.pctInhale = clampVal(Math.round((winInWeightedSum / winInDtSum) * 100), 0, 100);
-    } else if (train.pctInhale === null) {
-      train.pctInhale = clampVal(Math.round(inhaleScore * 100), 0, 100);
-    }
-    // 模組 2【噘唇呼氣】時間加權百分比: Σ(score_i * dt_i) / Σ(dt_i)
-    if (winExDtSum >= 0.25) {
-      train.pctExhale = clampVal(Math.round((winExWeightedSum / winExDtSum) * 100), 0, 100);
-    } else if (train.pctExhale === null) {
-      train.pctExhale = clampVal(Math.round(exhaleScore * 100), 0, 100);
-    }
-    // 模組 3【沉肩放鬆】時間加權百分比: Σ(score_i * dt_i) / Σ(dt_i)
-    if (winShDtSum >= 0.25) {
-      train.pctShoulder = clampVal(Math.round((winShWeightedSum / winShDtSum) * 100), 0, 100);
-    } else if (train.pctShoulder === null) {
-      train.pctShoulder = clampVal(Math.round(shoulderScore * 100), 0, 100);
-    }
-    // 模組 4【呼吸速率】準確度百分比：max(0, round((1 - |Actual_RR - Target_RR| / Target_RR) * 100))%
-    const targetRR = Math.max(1, AppState.targetBpm);
-    const actualRR = train.avgRR;
-    train.pctRr = clampVal(Math.max(0, Math.round((1 - Math.abs(actualRR - targetRR) / targetRR) * 100)), 0, 100);
-
-    // 【調整 3】累計各模組連續良好表現秒數 (Consecutive 10s Improved Skill Tracking)
-    const consec = train.consecutiveImprovedSec;
-    const sat = AppState.feedback.satisfiedBy10s;
-
-    // 1. 沉肩放鬆連續改善計時
-    if (shoulderScore >= 0.80) {
-      consec.shoulder += dt;
-    } else {
-      consec.shoulder = 0;
-      sat.shoulder = false;
-    }
-    if (train.pctShoulder >= PASSING_SCORE_PCT) sat.shoulder = false;
-
-    // 2. 合口吸氣連續改善計時 (吸氣階段檢驗 inhaleScore >= 0.80；呼氣階段若已處於連續良好狀態則延續計時)
-    if (train.currentPhase === PHASES.INHALE) {
-      if (inhaleScore >= 0.80) {
-        consec.inhale += dt;
-      } else {
-        consec.inhale = 0;
-        sat.inhale = false;
-      }
-    } else if (consec.inhale > 0) {
-      consec.inhale += dt;
-    }
-    if (train.pctInhale >= PASSING_SCORE_PCT) sat.inhale = false;
-
-    // 3. 噘唇呼氣連續改善計時 (呼氣階段檢驗 exhaleScore >= 0.80；吸氣階段若已處於連續良好狀態則延續計時)
-    if (train.currentPhase === PHASES.EXHALE) {
-      if (exhaleScore >= 0.80) {
-        consec.exhale += dt;
-      } else {
-        consec.exhale = 0;
-        sat.exhale = false;
-      }
-    } else if (consec.exhale > 0) {
-      consec.exhale += dt;
-    }
-    if (train.pctExhale >= PASSING_SCORE_PCT) sat.exhale = false;
-
-    // 4. 呼吸速率連續改善計時
-    const currentRrAccuracy = clampVal(Math.max(0, Math.round((1 - Math.abs(actualRR - targetRR) / targetRR) * 100)), 0, 100);
-    if (currentRrAccuracy >= PASSING_SCORE_PCT) {
-      consec.rr += dt;
-    } else {
-      consec.rr = 0;
-      sat.rr = false;
-    }
-    if (train.pctRr >= PASSING_SCORE_PCT) sat.rr = false;
-  }
+  // 模組 4【呼吸速率】準確度百分比：max(0, round((1 - |Actual_RR - Target_RR| / Target_RR) * 100))%
+  const targetRR = Math.max(1, AppState.targetBpm);
+  const actualRR = train.avgRR;
+  train.pctRr = clampVal(Math.max(0, Math.round((1 - Math.abs(actualRR - targetRR) / targetRR) * 100)), 0, 100);
 
   // 更新四張百分比生物反饋指示卡 (C.3) 與底部鎖定平滑過渡橫幅 (C.4)
   renderIndicatorCards();
@@ -653,6 +490,7 @@ export function advanceBreathingPacer(now) {
     dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimalIn ? "pure-guiding-ball " : ""}rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
 
     if (phaseElapsed >= AppState.inhaleTarget) {
+      evaluateCompletedPhase(PHASES.INHALE, train.elapsedSeconds);
       triggerPhaseSwitch(PHASES.EXHALE);
     }
   } else {
@@ -678,6 +516,7 @@ export function advanceBreathingPacer(now) {
       }
 
       if (softProgress >= 1) {
+        evaluateCompletedPhase(PHASES.EXHALE, train.elapsedSeconds);
         finalizeCurrentCycle(now, true);
         train.cycleIndex++;
         train.cycleStartTime = now;
@@ -701,6 +540,7 @@ export function advanceBreathingPacer(now) {
     dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimalEx ? "pure-guiding-ball " : ""}rounded-full pacer-exhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
 
     if (phaseElapsed >= AppState.exhaleTarget) {
+      evaluateCompletedPhase(PHASES.EXHALE, train.elapsedSeconds);
       finalizeCurrentCycle(now, false);
       train.cycleIndex++;
       train.cycleStartTime = now;
@@ -781,22 +621,13 @@ export function finalizeCurrentCycle(now = performance.now(), wasSoftTransition 
 // - >= 80%：合格達標（綠色柔和樣式）
 // - < 80%：直接顯示「需要改善」（橙紅警示樣式，並納入警示排程；移除舊有 70%–79% 卡片分段）
 // ----------------------------------------------------------------------------
-export function applyModuleCardStyle(cardEl, stateEl, pctEl, pctVal, isLatchedTarget = false, isWarmingUp = false) {
+export function applyModuleCardStyle(cardEl, stateEl, pctEl, pctVal, isLatchedTarget = false, inAlertSchedule = false) {
   if (!cardEl || !stateEl || !pctEl) return;
 
-  if (isWarmingUp || pctVal === null || pctVal === undefined) {
-    stateEl.textContent = "統計中";
-    pctEl.textContent = "統計中";
-    stateEl.className = "text-xs md:text-sm font-extrabold text-slate-500";
-    pctEl.className = "text-xl md:text-2xl font-black font-mono text-slate-500";
-    cardEl.className = "p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 flex items-center justify-between transition-all shadow-sm";
-    return;
-  }
-
-  const clamped = clampVal(Math.round(pctVal), 0, 100);
+  const clamped = clampVal(Math.round(pctVal ?? 100), 0, 100);
   pctEl.textContent = `${clamped}%`;
 
-  if (clamped >= PASSING_SCORE_PCT) {
+  if (!inAlertSchedule && clamped >= PASSING_SCORE_PCT) {
     stateEl.textContent = "合格達標";
     stateEl.className = "text-xs md:text-sm font-extrabold text-[#2E7D32]";
     pctEl.className = "text-2xl md:text-3xl font-black font-mono text-[#2E7D32]";
@@ -812,13 +643,44 @@ export function applyModuleCardStyle(cardEl, stateEl, pctEl, pctVal, isLatchedTa
 
 export function renderIndicatorCards() {
   const train = AppState.training;
-  const latched = AppState.feedback.latchedModule;
-  const warming = train.isWarmingUp || (train.elapsedSeconds < INITIAL_GRACE_SECONDS && train.pctInhale === null);
+  const topAlert = (!train.isWarmingUp && train.elapsedSeconds >= INITIAL_GRACE_SECONDS)
+    ? getHighestPriorityAlert()
+    : null;
+  const latched = topAlert ? topAlert.key : null;
+  const sched = train.alertSchedule || {};
 
-  applyModuleCardStyle(dom.cardInhale, dom.textInhaleState, dom.badgeInhalePct, train.pctInhale, latched === 'inhale', warming);
-  applyModuleCardStyle(dom.cardExhale, dom.textExhaleState, dom.badgeExhalePct, train.pctExhale, latched === 'exhale', warming);
-  applyModuleCardStyle(dom.cardShoulder, dom.textShoulderState, dom.badgeShoulderPct, train.pctShoulder, latched === 'shoulder', warming);
-  applyModuleCardStyle(dom.cardRr, dom.textRrState, dom.badgeRrPct, train.pctRr, latched === 'rr', warming);
+  applyModuleCardStyle(
+    dom.cardInhale,
+    dom.textInhaleState,
+    dom.badgeInhalePct,
+    train.pctInhale,
+    latched === 'inhale',
+    !!(sched.inhale && sched.inhale.inAlertSchedule)
+  );
+  applyModuleCardStyle(
+    dom.cardExhale,
+    dom.textExhaleState,
+    dom.badgeExhalePct,
+    train.pctExhale,
+    latched === 'exhale',
+    !!(sched.exhale && sched.exhale.inAlertSchedule)
+  );
+  applyModuleCardStyle(
+    dom.cardShoulder,
+    dom.textShoulderState,
+    dom.badgeShoulderPct,
+    train.pctShoulder,
+    latched === 'shoulder',
+    !!(sched.shoulder && sched.shoulder.inAlertSchedule)
+  );
+  applyModuleCardStyle(
+    dom.cardRr,
+    dom.textRrState,
+    dom.badgeRrPct,
+    train.pctRr,
+    false,
+    false
+  );
 }
 
 // ----------------------------------------------------------------------------

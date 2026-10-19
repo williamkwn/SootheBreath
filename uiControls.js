@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v7.0 ES6 Module — uiControls.js
+ * 舒呼(SootheBreath) v8.0 ES6 Module — uiControls.js
  * 狀態機視圖切換、臨床調試面板 (Debug Drawer) 與全域 UI 事件監聽器 (State Machine & UI Controls)
  */
 
@@ -64,7 +64,7 @@ export function switchViewState(targetState) {
 
     case STATES.TRAINING:
       dom.stateTrain.classList.remove('hidden');
-      dom.bottomBanner.classList.remove('hidden');
+      dom.bottomBanner.classList.add('hidden');
       runTrainingSequence();
       break;
 
@@ -96,18 +96,14 @@ export function updateDebugReadouts() {
     dom.dbgRr.textContent = `${AppState.training.avgRR.toFixed(1)} BPM (${rrLabel})`;
   }
   if (dom.dbgLatch) {
-    const latchNames = {
-      inhale: '合口吸氣 (<80%)',
-      exhale: '噘唇呼氣 (<80%)',
-      shoulder: '沉肩放鬆 (<80%)',
-      rr: '呼吸速率 (<80%)'
-    };
-    const consecSec = AppState.feedback.latchedModule
-      ? ((AppState.training.consecutiveImprovedSec && AppState.training.consecutiveImprovedSec[AppState.feedback.latchedModule]) || 0).toFixed(1)
-      : '0.0';
-    dom.dbgLatch.textContent = AppState.feedback.latchedModule
-      ? `🔒 鎖定中：${latchNames[AppState.feedback.latchedModule] || AppState.feedback.latchedModule} (連續改善 ${consecSec}s/10s)`
-      : '✅ 持續保持 (全部 ≥80%)';
+    const sched = AppState.training.alertSchedule;
+    const activeKey = AppState.feedback.latchedModule;
+    if (activeKey && sched && sched[activeKey]) {
+      const item = sched[activeKey];
+      dom.dbgLatch.textContent = `⚠️ 排程優先：${item.label} (連續失敗 ${item.consecutiveFails} 次 · 連續合格 ${item.consecutivePasses}/2)`;
+    } else {
+      dom.dbgLatch.textContent = '✅ 無排程警示 (全部合格或已解鎖)';
+    }
   }
 }
 
