@@ -1,6 +1,6 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — uiControls.js
- * 狀態機視圖切換、臨床調試面板 (Debug Drawer) 與全域 UI 事件監聽器 (State Machine & UI Controls)
+ * 舒呼(SootheBreath) v9 ES6 Module — uiControls.js
+ * 狀態機視圖切換、臨床調試面板 (Debug Drawer) 與全域 UI 事件監聽器 (含 v9 互動模式切換與資源釋放)
  */
 
 import { STATES, DEFAULT_THRESHOLDS, THRESHOLDS, AppState } from './state.js';
@@ -17,11 +17,16 @@ import {
   showCalibrationConfirmation
 } from './calibration.js';
 import {
-   runTrainingSequence,
+  runTrainingSequence,
   applyPrivacyModeStyles,
   applyDisplayModeStyles,
   finalizeCurrentCycle
 } from './training.js';
+import {
+  disposeInteractive3D,
+  switchInteractiveObjectMode,
+  toggleInteractiveAudioMute
+} from './interactive3d.js';
 import {
   renderSummaryReport,
   exportDeidentifiedCSV,
@@ -36,6 +41,11 @@ export function switchViewState(targetState) {
   if (AppState.calibTimerId) {
     clearInterval(AppState.calibTimerId);
     AppState.calibTimerId = null;
+  }
+
+  // 當離開訓練頁面 (STATE_TRAINING) 時，自動清除 Three.js 資源防止 Memory Leak
+  if (targetState !== STATES.TRAINING) {
+    disposeInteractive3D();
   }
 
   AppState.currentState = targetState;
@@ -75,7 +85,6 @@ export function switchViewState(targetState) {
       break;
   }
 }
-
 
 // ============================================================================
 // 12. 調試面板與使用者介面監聽器 (Debug Drawer & Event Listeners)
@@ -117,9 +126,6 @@ export function closeDebugDrawer() {
   if (dom.debugBackdrop) dom.debugBackdrop.classList.add('hidden');
 }
 
-/**
- * 根據設定的 BPM (20 至 5) 與吸呼比例 (1:2 或 1:3) 自動計算吸氣與呼氣秒數
- */
 export function updatePacingCalculationsUI() {
   const bpm = Math.max(5, Math.min(20, AppState.targetBpm));
   const ratio = AppState.ieRatio === 3 ? 3 : 2;
@@ -148,6 +154,23 @@ export function updatePacingCalculationsUI() {
   if (dom.valDurationMins) {
     dom.valDurationMins.textContent = `${mins} 分鐘`;
   }
+}
+
+/**
+ * 啟用互動模式（同步設定單欄純引導版面與 3D 互動場景）
+ */
+export function activateInteractiveMode(subObject = AppState.interactiveObject || 'pinwheel') {
+  if (AppState.privacyMode !== 'interactive') {
+    AppState.lastNonInteractivePrivacyMode = AppState.privacyMode;
+  }
+  if (AppState.displayMode !== 'interactive') {
+    AppState.lastNonInteractiveDisplayMode = AppState.displayMode;
+  }
+  AppState.privacyMode = 'interactive';
+  AppState.displayMode = 'interactive';
+  AppState.interactiveObject = subObject;
+  applyPrivacyModeStyles();
+  applyDisplayModeStyles();
 }
 
 export function setupEventListeners() {
@@ -184,44 +207,90 @@ export function setupEventListeners() {
     });
   }
 
-  // 4. 相機顯示模式選擇
+  // 4. 相機與訓練版面模式選擇 (含 v9 互動模式)
   if (dom.selectPrivacy) {
     dom.selectPrivacy.addEventListener('change', (e) => {
-      AppState.privacyMode = e.target.value;
-      applyPrivacyModeStyles();
+      const val = e.target.value;
+      if (val === 'interactive') {
+        activateInteractiveMode(AppState.interactiveObject);
+      } else {
+        AppState.privacyMode = val;
+        AppState.lastNonInteractivePrivacyMode = val;
+        if (AppState.displayMode === 'interactive') {
+          AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
+        }
+        applyPrivacyModeStyles();
+        applyDisplayModeStyles();
+      }
     });
   }
 
   if (dom.btnModeMirror) {
     dom.btnModeMirror.addEventListener('click', () => {
       AppState.privacyMode = 'mirror';
+      AppState.lastNonInteractivePrivacyMode = 'mirror';
+      if (AppState.displayMode === 'interactive') {
+        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
+      }
       applyPrivacyModeStyles();
+      applyDisplayModeStyles();
     });
   }
   if (dom.btnModeMesh) {
     dom.btnModeMesh.addEventListener('click', () => {
       AppState.privacyMode = 'privacy_mesh';
+      AppState.lastNonInteractivePrivacyMode = 'privacy_mesh';
+      if (AppState.displayMode === 'interactive') {
+        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
+      }
       applyPrivacyModeStyles();
+      applyDisplayModeStyles();
     });
   }
   if (dom.btnModeMinimal) {
     dom.btnModeMinimal.addEventListener('click', () => {
       AppState.privacyMode = 'minimalist';
+      AppState.lastNonInteractivePrivacyMode = 'minimalist';
+      if (AppState.displayMode === 'interactive') {
+        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
+      }
       applyPrivacyModeStyles();
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnModeInteractive) {
+    dom.btnModeInteractive.addEventListener('click', () => {
+      activateInteractiveMode(AppState.interactiveObject);
+      showToast(`🎡 已切換至互動模式（${AppState.interactiveObject === 'dandelion' ? '蒲公英' : '風車'}）`);
     });
   }
 
-  // 5. 呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性)
+  // 5. 呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性) vs 互動模式 (風車 / 蒲公英)
   if (dom.btnPacerBalloon) {
     dom.btnPacerBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
+      AppState.lastNonInteractiveDisplayMode = 'balloon';
+      if (AppState.privacyMode === 'interactive') {
+        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+      }
+      applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
   }
   if (dom.btnPacerHuman) {
     dom.btnPacerHuman.addEventListener('click', () => {
       AppState.displayMode = 'human';
+      AppState.lastNonInteractiveDisplayMode = 'human';
+      if (AppState.privacyMode === 'interactive') {
+        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+      }
+      applyPrivacyModeStyles();
       applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnPacerInteractive) {
+    dom.btnPacerInteractive.addEventListener('click', () => {
+      activateInteractiveMode(AppState.interactiveObject);
     });
   }
   if (dom.btnGenderMale) {
@@ -236,11 +305,30 @@ export function setupEventListeners() {
       applyDisplayModeStyles();
     });
   }
+  if (dom.btnInteractivePinwheel) {
+    dom.btnInteractivePinwheel.addEventListener('click', () => {
+      AppState.interactiveObject = 'pinwheel';
+      switchInteractiveObjectMode('pinwheel');
+      applyDisplayModeStyles();
+    });
+  }
+  if (dom.btnInteractiveDandelion) {
+    dom.btnInteractiveDandelion.addEventListener('click', () => {
+      AppState.interactiveObject = 'dandelion';
+      switchInteractiveObjectMode('dandelion');
+      applyDisplayModeStyles();
+    });
+  }
 
-  // 訓練中快速切換氣球 / 男性 / 女性
+  // 訓練中快速切換氣球 / 男性 / 女性 / 互動模式
   if (dom.btnTrainBalloon) {
     dom.btnTrainBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
+      AppState.lastNonInteractiveDisplayMode = 'balloon';
+      if (AppState.privacyMode === 'interactive') {
+        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+      }
+      applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("🎈 已切換至氣球模式");
     });
@@ -248,7 +336,12 @@ export function setupEventListeners() {
   if (dom.btnTrainMale) {
     dom.btnTrainMale.addEventListener('click', () => {
       AppState.displayMode = 'human';
+      AppState.lastNonInteractiveDisplayMode = 'human';
       AppState.humanGender = 'male';
+      if (AppState.privacyMode === 'interactive') {
+        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+      }
+      applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("👨 已切換至真人示範（男性）");
     });
@@ -256,9 +349,44 @@ export function setupEventListeners() {
   if (dom.btnTrainFemale) {
     dom.btnTrainFemale.addEventListener('click', () => {
       AppState.displayMode = 'human';
+      AppState.lastNonInteractiveDisplayMode = 'human';
       AppState.humanGender = 'female';
+      if (AppState.privacyMode === 'interactive') {
+        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+      }
+      applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("👩 已切換至真人示範（女性）");
+    });
+  }
+  if (dom.btnTrainInteractive) {
+    dom.btnTrainInteractive.addEventListener('click', () => {
+      activateInteractiveMode(AppState.interactiveObject);
+      showToast(`🎡 已切換至互動模式（${AppState.interactiveObject === 'dandelion' ? '蒲公英' : '風車'}）`);
+    });
+  }
+
+  // 3D 互動模式內部頂部按鈕 (風車 vs 蒲公英 & 柔和音樂開關)
+  if (dom.modePinwheelBtn) {
+    dom.modePinwheelBtn.addEventListener('click', () => {
+      AppState.interactiveObject = 'pinwheel';
+      switchInteractiveObjectMode('pinwheel');
+      applyDisplayModeStyles();
+      showToast("🌈 已切換至風車 Pinwheel");
+    });
+  }
+  if (dom.modeDandelionBtn) {
+    dom.modeDandelionBtn.addEventListener('click', () => {
+      AppState.interactiveObject = 'dandelion';
+      switchInteractiveObjectMode('dandelion');
+      applyDisplayModeStyles();
+      showToast("🌼 已切換至蒲公英 Dandelion");
+    });
+  }
+  if (dom.musicToggleBtn) {
+    dom.musicToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleInteractiveAudioMute();
     });
   }
 
@@ -283,7 +411,7 @@ export function setupEventListeners() {
     });
   }
 
-  // 五步校準控制按鈕監聽器 (Section B.2)
+  // 五步校準控制按鈕監聽器
   if (dom.btnCalibConfirmStep) {
     dom.btnCalibConfirmStep.addEventListener('click', () => {
       startStep3sCountdown();
@@ -405,49 +533,42 @@ export function setupEventListeners() {
       dom.dbgLblLarInMax.textContent = THRESHOLDS.larInhaleMax.toFixed(2);
     });
   }
-
   if (dom.dbgRangeJawInMax) {
     dom.dbgRangeJawInMax.addEventListener('input', (e) => {
       THRESHOLDS.jawOpenInhaleMax = parseFloat(e.target.value);
       dom.dbgLblJawInMax.textContent = THRESHOLDS.jawOpenInhaleMax.toFixed(2);
     });
   }
-
   if (dom.dbgRangeLarWideErr) {
     dom.dbgRangeLarWideErr.addEventListener('input', (e) => {
       THRESHOLDS.larExhaleWideErr = parseFloat(e.target.value);
       dom.dbgLblLarWideErr.textContent = THRESHOLDS.larExhaleWideErr.toFixed(2);
     });
   }
-
   if (dom.dbgRangeLarExMin) {
     dom.dbgRangeLarExMin.addEventListener('input', (e) => {
       THRESHOLDS.larExhaleMin = parseFloat(e.target.value);
       dom.dbgLblLarExMin.textContent = THRESHOLDS.larExhaleMin.toFixed(2);
     });
   }
-
   if (dom.dbgRangeLarExMax) {
     dom.dbgRangeLarExMax.addEventListener('input', (e) => {
       THRESHOLDS.larExhaleMax = parseFloat(e.target.value);
       dom.dbgLblLarExMax.textContent = THRESHOLDS.larExhaleMax.toFixed(2);
     });
   }
-
   if (dom.dbgRangePuckerMin) {
     dom.dbgRangePuckerMin.addEventListener('input', (e) => {
       THRESHOLDS.mouthPuckerMin = parseFloat(e.target.value);
       dom.dbgLblPuckerMin.textContent = THRESHOLDS.mouthPuckerMin.toFixed(2);
     });
   }
-
   if (dom.dbgRangeFunnelMin) {
     dom.dbgRangeFunnelMin.addEventListener('input', (e) => {
       THRESHOLDS.mouthFunnelMin = parseFloat(e.target.value);
       dom.dbgLblFunnelMin.textContent = THRESHOLDS.mouthFunnelMin.toFixed(2);
     });
   }
-
   if (dom.dbgRangeShoulderMax) {
     dom.dbgRangeShoulderMax.addEventListener('input', (e) => {
       THRESHOLDS.shoulderHikeWarn = parseFloat(e.target.value);
@@ -483,4 +604,3 @@ export function setupEventListeners() {
     });
   }
 }
-

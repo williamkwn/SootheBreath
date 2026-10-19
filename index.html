@@ -3,17 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>舒呼(SootheBreath) 呼吸復康訓練</title>
+  <title>舒呼(SootheBreath) 呼吸復康訓練 (v9)</title>
   
   <!-- PWA Settings -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4DB6AC">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練">
+  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v9">
   
   <!-- Tailwind CSS Play CDN v3.4 -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 for v9 3D Interactive Mode (Pinwheel & Dandelion) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     if (typeof tailwind !== 'undefined') {
       tailwind.config = {
@@ -40,14 +42,9 @@
     }
   </script>
   
-  <!-- Style Sheet (with v=6.0 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=8.0">
+  <!-- Style Sheet (with v=9.0 cache buster + inline critical styles) -->
+  <link rel="stylesheet" href="style.css?v=9.0">
   <style>
-/* ==========================================================================
-   舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v8.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
-   ========================================================================== */
-
 :root {
   --inhale-color: #4DB6AC;
   --exhale-color: #FF7043;
@@ -57,8 +54,6 @@
   --text-main: #2c3e50;
   --text-muted: #64748b;
 }
-
-/* Prevent mobile pull-to-refresh and rubber-band bounce */
 html, body {
   overscroll-behavior-y: none;
   touch-action: manipulation;
@@ -67,269 +62,9 @@ html, body {
   background-color: var(--bg-color);
   color: var(--text-main);
 }
-
-/* Gentle pastel clinical background glow */
-.bg-soothe-mesh {
-  background-color: var(--bg-color);
-  background-image: 
-    radial-gradient(at 12% 15%, rgba(77, 182, 172, 0.14) 0px, transparent 50%),
-    radial-gradient(at 88% 85%, rgba(255, 112, 67, 0.10) 0px, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(255, 255, 255, 0.8) 0px, transparent 70%);
-}
-
-/* Mirror Mode transform for WebRTC Camera and Vision Canvas */
-.mirror-mode {
-  transform: scaleX(-1);
-  -webkit-transform: scaleX(-1);
-}
-
-/* High Contrast Bottom Banner Font & Pulse — STRICTLY hidden when .hidden is present */
-#bottom-banner {
-  display: none;
-}
-
-#bottom-banner:not(.hidden) {
-  font-size: clamp(20px, 2.3vw, 30px);
-  min-height: 4rem;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 -8px 25px -5px rgba(44, 62, 80, 0.08);
-}
-
-/* Flashing red alert for shoulder hike / low percentage warning */
-@keyframes flash-shoulder-alert {
-  0%, 100% {
-    border-color: rgba(239, 68, 68, 0.55);
-    background-color: rgba(254, 242, 242, 0.92);
-  }
-  50% {
-    border-color: rgba(220, 38, 38, 1);
-    background-color: rgba(254, 226, 226, 0.98);
-  }
-}
-
-.shoulder-alert-active {
-  animation: flash-shoulder-alert 0.9s infinite ease-in-out;
-  border-width: 2px !important;
-}
-
-/* Smooth Dynamic Breathing Pacer Sphere Animations */
-#pacer-ball {
-  will-change: transform, background-color, box-shadow;
-  transition: transform 0.12s linear, box-shadow 0.4s ease, background-color 0.5s ease;
-}
-
-.pacer-inhale-style {
-  background-color: var(--inhale-color);
-  box-shadow: 0 15px 45px rgba(77, 182, 172, 0.35);
-}
-
-.pacer-exhale-style {
-  background-color: var(--exhale-color);
-  box-shadow: 0 15px 45px rgba(255, 112, 67, 0.35);
-}
-
-/* Human Demonstration Mode Image Transitions */
-.human-demo-container {
-  position: relative;
-  border-radius: 22px;
-  overflow: hidden;
-  box-shadow: 0 12px 32px rgba(44, 62, 80, 0.12);
-  background: #ffffff;
-  border: 3px solid rgba(77, 182, 172, 0.35);
-  transition: border-color 0.5s ease, box-shadow 0.5s ease;
-}
-
-.human-demo-container.exhale-border {
-  border-color: rgba(255, 112, 67, 0.45);
-  box-shadow: 0 12px 32px rgba(255, 112, 67, 0.15);
-}
-
-.human-img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.65s ease-in-out;
-}
-
-.human-img.active-img {
-  opacity: 1;
-}
-
-/* Privacy Mesh Dark Canvas Background (#0f172a / slate-900 — preserved per clinical spec) */
-.privacy-mesh-canvas {
-  background-color: #0f172a !important;
-}
-
-/* Custom Range Slider Styling (Soft Green/Teal Theme) */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 8px;
-  border-radius: 9999px;
-  background: #e2e8f0;
-  outline: none;
-  transition: background 0.2s;
-}
-
-input[type="range"]:hover {
-  background: #cbd5e1;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--accent-color);
-  cursor: pointer;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 2px 6px rgba(46, 125, 50, 0.3);
-  transition: transform 0.15s ease, background-color 0.15s ease;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.12);
-  background: #388e3c;
-}
-
-/* Custom Scrollbars */
-#debug-drawer::-webkit-scrollbar,
-#list-history::-webkit-scrollbar,
-#calib-confirm-overlay::-webkit-scrollbar {
-  width: 6px;
-}
-
-#debug-drawer::-webkit-scrollbar-track,
-#list-history::-webkit-scrollbar-track,
-#calib-confirm-overlay::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-
-#debug-drawer::-webkit-scrollbar-thumb,
-#list-history::-webkit-scrollbar-thumb,
-#calib-confirm-overlay::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-
-#debug-drawer::-webkit-scrollbar-thumb:hover,
-#list-history::-webkit-scrollbar-thumb:hover,
-#calib-confirm-overlay::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* iOS Safari Home Screen Fullscreen Adjustments */
-@supports (-webkit-touch-callout: none) {
-  body {
-    min-height: -webkit-fill-available;
-  }
-}
-
-/* Offline Resilience: Ensure .hidden utility works even if CDN is unreachable */
 .hidden {
   display: none !important;
 }
-
-/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v8.0) */
-#calib-step-workspace:not(.hidden) {
-  display: grid;
-  align-items: start;
-}
-
-#calib-video-box {
-  position: relative !important;
-  overflow: hidden !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  height: clamp(230px, 40vh, 360px) !important;
-  max-height: 42vh !important;
-  background-color: #0f172a;
-  border-radius: 1rem;
-  z-index: 1 !important;
-  isolation: isolate !important;
-  box-sizing: border-box !important;
-}
-
-#calib-control-panel {
-  position: relative !important;
-  z-index: 20 !important;
-  min-width: 0 !important;
-  height: clamp(230px, 40vh, 360px) !important;
-  max-height: 42vh !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-
-#calib-confirm-overlay {
-  position: relative !important;
-  z-index: 20 !important;
-  min-width: 0 !important;
-}
-
-#calib-video-overlay:not(.hidden) {
-  display: flex !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-#debug-backdrop {
-  z-index: 90 !important;
-}
-
-#debug-drawer {
-  z-index: 100 !important;
-}
-
-/* Task B: Pure Guiding Mode (~40% Training Page Bubble & Human Demo Sizing) */
-.pure-guiding-ring {
-  width: clamp(250px, 40vmin, 420px) !important;
-  height: clamp(250px, 40vmin, 420px) !important;
-}
-
-.pure-guiding-ball {
-  width: clamp(180px, 28vmin, 300px) !important;
-  height: clamp(180px, 28vmin, 300px) !important;
-}
-
-.pure-guiding-ball #pacer-action-text {
-  font-size: clamp(1.15rem, 2.2vmin, 1.65rem) !important;
-}
-
-.pure-guiding-ball #pacer-seconds-text {
-  font-size: clamp(0.9rem, 1.7vmin, 1.2rem) !important;
-}
-
-.pure-guiding-human {
-  width: clamp(250px, 40vmin, 420px) !important;
-  height: clamp(250px, 40vmin, 420px) !important;
-}
-
-#calib-video,
-#calib-canvas,
-#train-video,
-#train-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-#calib-canvas,
-#train-canvas {
-  pointer-events: none;
-}
-
   </style>
 </head>
 <body class="h-full flex flex-col font-sans select-none overflow-x-hidden antialiased bg-soothe-mesh text-slate-800">
@@ -343,7 +78,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
       <div>
         <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
           舒呼(SootheBreath) 呼吸復康訓練
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v8.0</span>
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v9</span>
         </h1>
       </div>
     </div>
@@ -387,7 +122,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
           <div class="text-xl shrink-0 mt-0.5">🛡️</div>
           <div class="text-xs text-slate-600 leading-relaxed">
             <span class="font-bold text-[#2E7D32]">隱私設計保證 (Privacy-by-Design)：</span>
-            所有視訊幀僅於本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕不錄影、絕不上傳伺服器；支援「實時鏡像模式 Mirror Mode」、「去識別化骨架網格模式 Privacy Mesh Mode」與「純引導模式 Pure Guiding Mode」。
+            所有視訊幀僅於本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕不錄影、絕不上傳伺服器；支援「實時鏡像模式 Mirror Mode」、「去識別化骨架網格模式 Privacy Mesh Mode」、「純引導模式 Pure Guiding Mode」與「互動模式 Interactive Mode (風車 / 蒲公英)」。
           </div>
         </div>
 
@@ -452,17 +187,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
             </div>
           </div>
 
-          <!-- Card B: 顯示模式 (Section A.1: Removed voice default-on info banner; Section A.2: Capitalized English mode names) -->
+          <!-- Card B: 顯示模式 (含 v9 互動模式選擇) -->
           <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-4 flex flex-col justify-start">
             <div class="space-y-4">
               <label class="text-sm font-extrabold text-slate-800 block">顯示模式</label>
 
-              <!-- Display Mode: Balloon vs Human Mode -->
+              <!-- Display Mode: Balloon vs Human vs Interactive Mode -->
               <div class="space-y-1.5">
                 <span class="text-xs text-slate-600 font-medium block">呼吸引導顯示模式：</span>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                   <button id="btn-pacer-balloon" type="button" class="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer">🎈 氣球模式</button>
                   <button id="btn-pacer-human" type="button" class="flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">🧑 真人示範</button>
+                  <button id="btn-pacer-interactive" type="button" class="flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">🎡 互動模式</button>
                 </div>
               </div>
 
@@ -475,13 +211,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
                 </div>
               </div>
 
-              <!-- Camera Display Mode Selector (Capitalized English Mode Names) -->
+              <!-- v9 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
+              <div id="wrapper-interactive-object" class="hidden space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80">
+                <span class="text-xs text-amber-900 font-semibold block">互動模式 3D 主題選擇 (風車 / 蒲公英)：</span>
+                <div class="flex gap-2">
+                  <button id="btn-interactive-pinwheel" type="button" class="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer">🌈 風車 Pinwheel</button>
+                  <button id="btn-interactive-dandelion" type="button" class="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">🌼 蒲公英 Dandelion</button>
+                </div>
+              </div>
+
+              <!-- Camera Display Mode Selector (Capitalized English Mode Names + Interactive Mode) -->
               <div class="space-y-1.5">
                 <span class="text-xs text-slate-600 font-medium block">相機顯示模式：</span>
                 <select id="select-privacy-mode" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
                   <option value="mirror">實時鏡像模式 Mirror Mode</option>
                   <option value="privacy_mesh" selected>去識別化骨架網格模式 Privacy Mesh Mode</option>
                   <option value="minimalist">純引導模式 Pure Guiding Mode</option>
+                  <option value="interactive">互動模式 Interactive Mode (風車 / 蒲公英)</option>
                 </select>
               </div>
             </div>
@@ -501,7 +247,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
           <div class="flex justify-center">
             <button id="btn-start-demo" type="button" class="px-4 py-1.5 rounded-xl text-xs font-semibold text-teal-800 hover:bg-teal-100/70 transition cursor-pointer flex items-center gap-1.5">
               <span>🧪</span>
-              <span>免鏡頭互動模擬預覽 (無相機時測試五步個人化校準、真人示範與報表)</span>
+              <span>免鏡頭互動模擬預覽 (無相機時測試五步個人化校準、3D 互動模式與報表)</span>
             </button>
           </div>
         </div>
@@ -509,7 +255,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- 2. STATE_CALIBRATING: 五步個人化動態基準校準系統 (Section B) -->
+    <!-- 2. STATE_CALIBRATING: 五步個人化動態基準校準系統 -->
     <!-- ========================================================================= -->
     <div id="state-calibrating" class="hidden flex-1 relative flex flex-col items-center justify-start p-3 md:p-5 bg-[#f5fafd] overflow-y-auto">
       <div class="w-full max-w-6xl my-auto bg-white/95 backdrop-blur-xl border border-teal-100 rounded-3xl p-4 md:p-6 shadow-2xl space-y-4">
@@ -679,7 +425,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (Section C: 四大百分比指標與鎖定平滑警示) -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v9 3D 互動模式 風車 / 蒲公英) -->
     <!-- ========================================================================= -->
     <div id="state-training" class="hidden flex-1 flex flex-col overflow-hidden relative bg-[#f5fafd]">
 
@@ -702,20 +448,22 @@ input[type="range"]::-webkit-slider-thumb:hover {
           </div>
         </div>
 
-        <!-- Right Mode Switcher + Human/Balloon Switcher + 🔄 重校準 -->
+        <!-- Right Mode Switcher + Human/Balloon/Interactive Switcher + 🔄 重校準 -->
         <div class="flex flex-wrap items-center gap-1.5">
-          <!-- Camera Display Mode Switcher (Capitalized English Mode Names) -->
+          <!-- Camera & Layout Mode Switcher (Capitalized English Mode Names + v9 互動模式) -->
           <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button id="btn-mode-mirror" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">實時鏡像模式 Mirror Mode</button>
             <button id="btn-mode-mesh" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-xs transition cursor-pointer">去識別化骨架網格模式 Privacy Mesh Mode</button>
             <button id="btn-mode-minimal" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">純引導模式 Pure Guiding Mode</button>
+            <button id="btn-mode-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式 Interactive Mode</button>
           </div>
 
-          <!-- Pacer Visual Switcher (氣球 / 男性 / 女性) -->
+          <!-- Pacer Visual Switcher (氣球 / 男性 / 女性 / 互動模式) -->
           <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button id="btn-train-balloon" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-xs transition cursor-pointer">🎈 氣球</button>
             <button id="btn-train-male" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👨 男性</button>
             <button id="btn-train-female" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👩 女性</button>
+            <button id="btn-train-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式</button>
           </div>
 
           <!-- TRAINING 右上角 🔄 重校準 按鈕 -->
@@ -729,21 +477,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
       <!-- Training Body (Left Vision + Right/Center Pacer & Biofeedback) -->
       <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        <!-- Left Column / Vision Feed (60% in Mirror/Mesh mode; collapsed in Pure Guiding Mode) -->
+        <!-- Left Column / Vision Feed (60% in Mirror/Mesh mode; collapsed in Pure Guiding & Interactive Mode) -->
         <div id="vision-container" class="w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0">
           <video id="train-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
           <canvas id="train-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
 
-          <!-- Bottom-Left Camera Display Mode Badge (Capitalized English Mode Name) -->
+          <!-- Bottom-Left Camera Display Mode Badge -->
           <div id="badge-mesh-mode" class="absolute bottom-3 left-3 z-20 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-900/85 text-teal-300 border border-teal-500/30 backdrop-blur pointer-events-none">
             🔒 去識別化骨架網格模式 Privacy Mesh Mode
           </div>
         </div>
 
-        <!-- Right / Center Guidance Column (40% in Mirror/Mesh mode; 100% Centered in Pure Guiding Mode) -->
+        <!-- Right / Center Guidance Column (40% in Mirror/Mesh mode; 100% Centered in Pure Guiding & Interactive Mode) -->
         <div id="guidance-panel" class="w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3">
           
-          <!-- Dynamic Breathing Pacer Sphere OR Human Demonstration Mode -->
+          <!-- Dynamic Breathing Pacer Sphere OR Human Demonstration OR v9 3D Interactive Mode -->
           <div id="pacer-visual-area" class="flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center">
             
             <!-- Mode 1: Gentle Breathing Pacer Sphere (Balloon Mode) -->
@@ -766,13 +514,79 @@ input[type="range"]::-webkit-slider-thumb:hover {
               </div>
             </div>
 
-            <!-- Centered Text Prompt below Ball / Human Photo -->
-            <p id="pacer-phase-hint" class="text-xs md:text-sm text-slate-600 mt-3 font-bold text-center mx-auto">
+            <!-- Mode 3 (v9): 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
+            <div id="interactive-3d-wrapper" class="hidden w-full flex flex-col items-center justify-center mx-auto">
+              <div id="interactive-3d-stage" class="bg-pinwheel relative select-none text-slate-100">
+                <!-- Shallow Depth-of-Field Blurred Grassland Background (for Dandelion Mode) -->
+                <canvas id="bg-dof-canvas"></canvas>
+                <!-- 3D Scene Container -->
+                <div id="interactive-canvas-container"></div>
+                <div id="sun-glow-overlay" class="sun-glow"></div>
+
+                <!-- Top HUD: Status Pill, Mode Switcher & Audio Controls -->
+                <div class="relative z-10 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 pt-3 sm:pt-4 pointer-events-none">
+                  <div class="glass-pill rounded-full px-3.5 py-1.5 flex items-center gap-2 pointer-events-auto">
+                    <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 transition-colors duration-300 shadow-sm"></span>
+                    <span id="status-text" class="text-xs font-medium text-white tracking-wide">微風輕拂 · 靜止輕微晃動</span>
+                  </div>
+
+                  <div class="glass-pill rounded-full p-1 flex items-center gap-1 pointer-events-auto">
+                    <button id="mode-pinwheel-btn" type="button" class="mode-tab active rounded-full px-3 py-1 text-xs text-slate-100 flex items-center gap-1 cursor-pointer">
+                      <span>🌈</span>
+                      <span>風車 Pinwheel</span>
+                    </button>
+                    <button id="mode-dandelion-btn" type="button" class="mode-tab rounded-full px-3 py-1 text-xs text-slate-200 hover:text-white flex items-center gap-1 cursor-pointer">
+                      <span>🌼</span>
+                      <span>蒲公英 Dandelion</span>
+                    </button>
+                  </div>
+
+                  <div class="flex items-center gap-2 pointer-events-auto">
+                    <button id="music-toggle-btn" type="button" aria-label="切換背景音樂與音效" class="glass-pill rounded-full px-3 py-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-100 hover:text-white transition-all cursor-pointer active:scale-95">
+                      <svg id="icon-sound-on" class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"></path>
+                      </svg>
+                      <svg id="icon-sound-off" class="w-4 h-4 text-slate-400 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M23 9l-6 6m0-6l6 6"></path>
+                      </svg>
+                      <span id="audio-label">柔和音樂：開啟</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Bottom Motion-Triggered Blowing Status Bar (Replaced manual button press with motion-analysis trigger) -->
+                <div class="absolute bottom-0 inset-x-0 z-10 pb-3 sm:pb-4 pt-2 px-4 flex flex-col items-center justify-end pointer-events-none">
+                  <div id="speed-meter-wrap" class="w-48 sm:w-60 h-1.5 bg-slate-900/45 rounded-full overflow-hidden mb-2 opacity-0 transition-opacity duration-300 border border-white/20">
+                    <div id="speed-meter-bar" class="h-full w-0 bg-gradient-to-r from-amber-400 via-emerald-400 to-sky-400 rounded-full transition-none"></div>
+                  </div>
+
+                  <div class="relative pointer-events-none">
+                    <div id="btn-pulse-ring" class="wind-ring absolute inset-0 rounded-full border-2 border-amber-400/75 pointer-events-none hidden"></div>
+                    <div id="spin-hold-btn" class="spin-btn glass-pill relative rounded-full px-5 sm:px-7 py-2.5 flex items-center gap-3 text-white font-medium text-xs sm:text-sm tracking-wide">
+                      <span class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-md shrink-0">
+                        <svg id="wind-icon" class="w-4 h-4 transition-transform duration-500" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9.59 4.59A2 2 0 1111 8H2m10.59 11.41A2 2 0 1014 16H2m15.73-8.27A2.5 2.5 0 1119.5 12H2"></path>
+                        </svg>
+                      </span>
+                      <div class="flex flex-col items-start text-left">
+                        <span id="btn-main-text" class="font-semibold text-white leading-tight">動作感測吹風旋轉（免按鍵）</span>
+                        <span id="btn-sub-text" class="text-[11px] text-slate-200 leading-tight mt-0.5">合口鼻吸氣＋沉肩放鬆 → 噘唇呼氣即可自動吹動風車</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Centered Text Prompt below Ball / Human Photo / 3D Stage -->
+            <p id="pacer-phase-hint" class="text-xs md:text-sm text-slate-600 mt-2.5 font-bold text-center mx-auto">
               閉口由鼻吸氣 · 雙肩保持下沉
             </p>
           </div>
 
-          <!-- 4 Real-Time Clinical Biofeedback Percentage Cards (Section C.1 & C.3: Only Metric Name, Status Label, and Large Percentage) -->
+          <!-- 4 Real-Time Clinical Biofeedback Percentage Cards -->
           <div id="biofeedback-cards-grid" class="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5">
             
             <!-- Module 1: 合口吸氣 -->
@@ -925,6 +739,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
   </main>
 
   <!-- ========================================== -->
+  <!-- Bottom Version Number Remark Footer (v9) -->
+  <!-- ========================================== -->
+  <footer id="app-version-footer" class="w-full py-1.5 px-4 text-center text-xs font-bold text-slate-500 bg-white/85 border-t border-teal-100/80 shrink-0 z-20">
+    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v9
+  </footer>
+
+  <!-- ========================================== -->
   <!-- Collapsible Debug Drawer & Backdrop -->
   <!-- ========================================== -->
   <div id="debug-backdrop" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40"></div>
@@ -976,8 +797,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
           <span id="dbg-val-rr" class="font-extrabold text-[#2E7D32] text-sm">10.0 BPM (100%)</span>
         </div>
         <div class="col-span-2 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 flex justify-between items-center">
-          <span class="text-amber-900 font-sans font-semibold">Sticky Latch 警示鎖定狀態</span>
-          <span id="dbg-val-latch" class="font-extrabold text-amber-900 text-xs">✅ 持續保持 (全部 ≥80%)</span>
+          <span class="text-amber-900 font-sans font-semibold">排程警示狀態</span>
+          <span id="dbg-val-latch" class="font-extrabold text-amber-900 text-xs">✅ 無排程警示 (全部合格或已解鎖)</span>
         </div>
       </div>
     </div>
@@ -1057,7 +878,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   </div>
 
   <!-- ========================================== -->
-  <!-- Camera Diagnostic & Error Resolution Modal (Section 6) -->
+  <!-- Camera Diagnostic & Error Resolution Modal -->
   <!-- ========================================== -->
   <div id="modal-camera-error" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="max-w-lg w-full bg-white border border-rose-200 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-800">
@@ -1091,21 +912,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
     <span id="toast-text">操作成功</span>
   </div>
 
-  <!-- Clean old Service Worker caches & register v6 Service Worker -->
+  <!-- Clean old Service Worker caches & register v9 Service Worker -->
   <script>
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'soothebreath-v8.0.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v9.0.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=8.0')
+        navigator.serviceWorker.register('sw.js?v=9.0')
           .then(reg => {
             reg.update();
-            console.log('舒呼 SootheBreath PWA Service Worker v8.0 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v9 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -1113,6 +934,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   </script>
 
   <!-- Load ES6 Modular JavaScript Application Entry Point -->
-  <script type="module" src="./app.js?v=8.0"></script>
+  <script type="module" src="./app.js?v=9.0"></script>
 </body>
 </html>

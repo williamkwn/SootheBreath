@@ -1,67 +1,49 @@
-µÎ©I (SootheBreath) ©I§l´_±d°V½m ¡X ¹ê®É©I§lµøÄ±¥Íª«¤ÏõX¨t²Î (PWA v7.0 ¡P v7_ES)
-¥»¸ê®Æ§¨ (v7_ES) ¬°°ò©ó v6_ES ES6 ¼Ò²Õ¤Æ¬[ºc¥ş­±¤É¯Å¤§ v7.0 ¥¿¦¡ª©¡C¦b§¹¾ã«O¯d¬J¦³¤­¨B­Ó¤H¤Æ°ÊºA°ò·Ç®Õ·Ç¡B¼sªF¸Ü»y­µ¾É¯è»P°Î¦W CSV ¶×¥X¤§°òÂ¦¤W¡Av7.0 §¹¦¨®Õ·Ç­¶­±¨¾¾B¾×¡B¯Â¤Ş¾É¼Ò¦¡ ~40% µøÄ±©ñ¤j¡B­±³¡°T¸¹ EMA §Ü§İ°Ê¡B³sÄò¼Ò½kµû¤À¤Î°V½m¦^õXÅŞ¿è¤É¯Å¡C
-a. 1. v7.0 ®Ö¤ß¤É¯Å»P°V½mÅŞ¿è½Õ¾ãÁ`Äı
-¡´ Task A ¡X ®Õ·Ç­¶­±µø°T®Ø»P±±¨î/³]©w­±ªO¨¾¾B¾×­×´_ (STATE_CALIBRATING)¡G
-¡³ ©ó style.css ¤Î index.html ¬° #calib-video-box ³]©wÄY®æÃä¬É (min-width: 0, max-width: 100%, height: clamp(230px, 40vh, 360px), isolation: isolate, z-index: 1)¡A¨Ã¬°¥k°¼±±¨î­±ªO (#calib-control-panel, z-index: 20) »P½Õ¸Õ­±ªO (#debug-drawer, z-index: 100) «Ø¥ß¿W¥ß¹Ï¼h¡F¶i¤J¤­¨B®Õ·ÇÁ`µ²½T»{­±ªO®É¦Û°ÊÁôÂÃ #calib-video-box (calibration.js)¡C
-¡´ Task B ¡X ¯Â¤Ş¾É¼Ò¦¡ (Pure Guiding Mode) ®ğ²y»P¯u¤H¥Ü½d¹Ï©ñ¤j¦Ü¦û°V½m­¶ ~40% (STATE_TRAINING)¡G
-¡³ ©ó¯Â¤Ş¾É¼Ò¦¡¤U¡A³z¹L .pure-guiding-ring¡B.pure-guiding-ball ¤Î .pure-guiding-human ¼Ë¦¡ (style.css, training.js) ±N©I§l¸`«µ²y¥~Àô»P¯u¤H¥Ü½d¹Ï®Ø©ñ¤j¦Ü clamp(250px, 40vmin, 420px)¡]°t·f min-h-[44vh] µøÄ±°Ï¡^¡C
-¡´ Task C ¡X ­±³¡¥Íª«°T¸¹§Ü§İ°Ê¡B³sÄò¼Ò½kµû¤À»PÁ{§É¹L´ç¾÷¨î¤É¯Å (state.js, cvEngine.js, calibration.js, training.js)¡G
-b. ­ì©l°T¸¹ EMA Âoªi (smoothFacialSignalsEMA)¡G¹ï LAR (£\=0.25)¡BjawOpen (£\=0.25)¡BmouthPucker (£\=0.30) ¤Î mouthFunnel (£\=0.30) ¶i¦æ«ü¼Æ²¾°Ê¥­§¡Âoªi¡A¨Ã¥HÂoªi«á¼Æ­È­pºâ £GLAR »P £GmouthPucker¡C
-c. ³sÄò¼Ò½kµû¤À (getInhaleScore & getExhaleScore)¡G¥Ñ¤G¤¸ true/false ¤É¯Å¬° 0.0¡V1.0 ³sÄò¯BÂI¼Æµû¤À¡C
-d. ÄY®æ®É¶¡¥[Åv (dt) 20 ¬íºu°Ê®É¶¡µ¡¡G¨C´V°O¿ı { score, dt }¡A¥H weightedScore = £U(score_i * dt_i) / £U(dt_i) ­pºâ¦Ê¤À¤ñ¡C
-e. Âù¦V 400ms ¶¥¬qÂà´«½w½Ä´Á (PHASE_ENTRY_GRACE_MS = 400)¡G§l®ğ»P©I®ğ¶}©l«e 400ms ¦Û°Êµ¹¤© score = 1.0¡A¨C­Ó¶¥¬q¶g´ÁÄY®æ¶ÈÄ²µo¤@¦¸¡C
-f. °Ê§@°Ê¶qÁÅ§K¾÷¨î (applyActionMomentumExemption ¡X £G Trend Check)¡G·íµ´¹ï¤À¼Æ < 1.0 ®É¡A­Y§l®ğ¶¥¬q¼L¤Ú¥¿¥D°Ê³¬¦X (£GLAR < 0) ©Î©I®ğ¶¥¬q¼L®B¥¿¥D°Êäş°_ (£GmouthPucker > 0)¡A±N¸Ó´V¤À¼ÆÁÅ§K´£¤É¬° 1.0¡C
-g. ¸Ñ¨M®Õ·Ç¡u®p­È§V¤O³´¨À¡v(Peak Effort Trap ¡X 70% §é¦©)¡GmouthPuckerMin °V½mìH­È©T©w³]¬° 3 ¬í®Õ·Ç®p­È¤§ 70% (0.70)¡C
-¡´ °V½m¦^õX»P¥d¤ùÅã¥ÜÅŞ¿è½Õ¾ã (Training Logic Adjustments 1¡V3 ¡X training.js, feedback.js, state.js, index.html)¡G
-h. ¶}§½½w½Ä´Á¹w³]Åã¥Ü¡u²Î­p¤¤¡v¡G°V½m¶}©l«e 10 ¬í¶}§½½w½Ä´Á (elapsedSeconds < INITIAL_GRACE_SECONDS)¡A¥|±i¥Íª«¤ÏõX«ü¥Ü¥d¹w³]Åã¥Ü ¡u²Î­p¤¤¡v¡]¨ú¥N­ì¥»ªº 100%¡^¡A¥B¤£Ä²µo§C¤ÀÄµ¥Ü¡C
-i. ¤G¬q¦¡ 80% ¦X®æ¼Ğ·Ç¡]²¾°£¥d¤ù 70%¡V79% ¤À¬q¡^¡G§R°£°V½m­¶­±¥d¤ù­ì¥»ªº 70%¡V79%¡G«ùÄò«O«ù °Ï¶¡¡F¤Z >= 80% (PASSING_SCORE_PCT = 80) Åã¥Ü ¡u¦X®æ¹F¼Ğ¡v¡]ºñ¦â¬X©M¼Ë¦¡¡^¡A¤Z §C©ó 80% (< 80%) ª½±µÅã¥Ü¡u»İ­n§ïµ½¡v¡]¾í¬õÄµ¥Ü¼Ë¦¡¡A¨Ãª½±µ¯Ç¤JÄµ¥Ü±Æµ{¡^¡C
-j. ³sÄò 10 ¬í§ïµ½¦Û°ÊÂà²¾´£¿ô»P¡u«ùÄò«O«ù¡vª¬ºA (CONSECUTIVE_IMPROVE_SECONDS = 10.0)¡G·í¬Y¶µ < 80% «ü¼Ğ³QÂê©w´£¿ô®É¡A¥u­n¨Ï¥ÎªÌ©ó¸Ó¶µ¥Ø³sÄò 10 ¬í®i²{§ïµ½§Ş¥©¡]consecutiveImprovedSec >= 10.0¡^©Î¦Ê¤À¤ñ¦^¤É¦Ü >= 80%¡A¨t²Î§Y¸Ñ°£¸Ó¶µ¥ØÂê©w¨Ã¦Û°ÊÂà²¾´£¿ô¨ä¥L < 80% ªº¡u»İ­n§ïµ½¡v¶µ¥Ø¡F­Y©Ò¦³¨ä¥L¶µ¥Ø§¡ >= 80%¡A©³³¡¾î´T»P»y­µ§YÅã¥Ü¤Î¼½³ø ¡u«ùÄò«O«ù¡v¡C
-2. ES6 ¼Ò²Õ¤ÆÀÉ®×µ²ºc»P AI ºûÅ@¾É¯èªí (v7_ES/)
-ÀÉ®×¦WºÙ
-¦æ¼Æ
-®Ö¤ßÂ¾³d»P¶×¥X¶µ¥Ø (Exports)
-index.html
-1,093 ¦æ
-¥D­¶­±µ²ºc¡]§t¶}§½¡u²Î­p¤¤¡v¹w³]¥d¤ù¡B®Õ·Ç¨¾¾B¾×§G§½¡B¯Â¤Ş¾É¼Ò¦¡ ~40% ®e¾¹¤Î <script type="module" src="./app.js?v=7.0">¡^
-style.css
-269 ¦æ
-»´¬XÀøÂ¡°t¦â¡B®Õ·Çµø°T®ØÄY®æÃä¬É±±¨î (#calib-video-box) ¤Î¯Â¤Ş¾É¼Ò¦¡ ~40% ©ñ¤j¼Ë¦¡ (.pure-guiding-ring, .pure-guiding-ball, .pure-guiding-human)
-app.js
-61 ¦æ
-ES6 ±Ò°Ê¤J¤f (bootstrapApp) »P¥ş¼Ò²Õ Barrel Re-exports
-state.js
+# **èˆ’å‘¼ (SootheBreath) å‘¼å¸å¾©åº·è¨“ç·´ â€” å¯¦æ™‚å‘¼å¸è¦–è¦ºç”Ÿç‰©åé¥‹ç³»çµ± (PWA v9)**
 
-¨t²Î±`¼Æ¡BTHRESHOLDS¡BPASSING_SCORE_PCT = 80¡BCONSECUTIVE_IMPROVE_SECONDS = 10.0¡BPHASE_ENTRY_GRACE_MS = 400¡Bema() »P AppState
-dom.js
+æœ¬è³‡æ–™å¤¾ ([v9](https://drive.google.com/drive/folders/1tqYcEjma60Bgb-jVfZDgB8cp5N8aygEY)) ç‚ºåŸºæ–¼ [v8\_ES](https://drive.google.com/drive/folders/1QCqTV2nkx0aIcjJ8tZAwjKaAQlr638xF) ES6 æ¨¡çµ„åŒ–æ¶æ§‹å…¨é¢å‡ç´šä¹‹ **v9 æ­£å¼ç‰ˆ**ã€‚åœ¨ 100% å®Œæ•´ä¿ç•™äº”æ­¥å€‹äººåŒ–å‹•æ…‹åŸºæº–æ ¡æº–ï¼ˆè¦–è¨Šå‰ç½®æ¯›ç»ç’ƒé®ç½©èˆ‡å›ºå®šå°ºå¯¸é¢æ¿ï¼‰ã€é¢éƒ¨ç‰¹å¾µ EMA æŠ—æŠ–å‹•æ¿¾æ³¢ã€P0.4 é€£çºŒæ¨¡ç³Šè©•åˆ† (`frameScore` 0.0â€“1.0)ã€å…¨ç¨‹ç´¯è¨ˆæ™‚é–“ç™¾åˆ†æ¯” (`Percentage = (Î£ validTime / Î£ totalTime) * 100`)ã€éšæ®µçµæŸ (`>50%` éŒ¯èª¤ç‡) è©•ä¼°ã€é€£çºŒå…©æ¬¡å¤±æ•—æ’ç¨‹èˆ‡å…©æ¬¡åˆæ ¼è§£é– ([scoring.js](https://drive.google.com/file/d/1XOFNp31XGF5dmuVHJdMzkPzSl1a4-jCm/view?usp=drivesdk))ã€å»£æ±è©±èªéŸ³å°èˆªèˆ‡åŒ¿å CSV åŒ¯å‡ºä¹‹åŸºç¤ä¸Šï¼Œv9 æ–°å¢ **åº•éƒ¨ç‰ˆæœ¬å‚™è¨» (v9)** åŠ **3D äº’å‹•æ¨¡å¼ (`äº’å‹•æ¨¡å¼` â€” å¾®é¢¨é¢¨è»Š Pinwheel / è’²å…¬è‹± Dandelionï¼Œ[interactive3d.js](https://drive.google.com/file/d/1i2ye4a-7vhuhK9aa7FGNOf5bVrjKf--U/view?usp=drivesdk))**ã€‚
 
-152 ­Ó DOM ¤¸¯À§Ö¨ú°Ñ·Ó (dom, cacheDomElements, §t calibVideoBox) »P showToast
-vision.js
+# **1\. v9 æ ¸å¿ƒå‡ç´šç¸½è¦½ (What's New in v9)**
 
-@mediapipe/tasks-vision@0.10.14 ESM ¼Ò«¬¸ü¤J»P Face/Pose Landmarker ªì©l¤Æ
-camera.js
+## **A. æ‡‰ç”¨ç¨‹å¼åº•éƒ¨ç‰ˆæœ¬ç·¨è™Ÿå‚™è¨» (`#app-version-footer` â€” [index.html](https://drive.google.com/file/d/1fCix0WQ6ZiL3PLA_6C5xCFynHa921zE_/view?usp=drivesdk))**
 
-WebRTC ¬Û¾÷¦ê¬yºŞ²z (startCamera, stopCamera) »PµwÅé/Åv­­¶EÂ_¼uµ¡ (showCameraDiagnosticError)
-cvEngine.js
+* æ–¼æ‡‰ç”¨ç¨‹å¼åº•éƒ¨æ–°å¢å…¨åŸŸç‰ˆæœ¬å‚™è¨»æ¬„ (`#app-version-footer`)ï¼š`èˆ’å‘¼ (SootheBreath) å‘¼å¸å¾©åº·è¨“ç·´ç³»çµ± Â· ç‰ˆæœ¬å‚™è¨» (Version)ï¼šv9`ï¼Œä¸¦åŒæ­¥æ›´æ–°é ‚éƒ¨å°èˆªæ¬„æ¨™ç±¤ç‚º `PWA v9`ã€‚
 
-­±³¡ EMA Âoªi»P°Ê¶q­pºâ (smoothFacialSignalsEMA)¡B³sÄò¼Ò½kµû¤À (getInhaleScore, getExhaleScore)¡B°Ê§@°Ê¶qÁÅ§K (applyActionMomentumExemption)
-tts.js
+## **B. æ–°å¢ 3D äº’å‹•æ¨¡å¼ (`äº’å‹•æ¨¡å¼` Â· é¢¨è»Š Pinwheel / è’²å…¬è‹± Dandelion â€” [interactive3d.js](https://drive.google.com/file/d/1i2ye4a-7vhuhK9aa7FGNOf5bVrjKf--U/view?usp=drivesdk), [training.js](https://drive.google.com/file/d/1DwOv0z_blXpGM2EtwXhg1nCVN4x9M04f/view?usp=drivesdk), [uiControls.js](https://drive.google.com/file/d/1Osj9ObVv7xP5dPFWQUCGgsjBQ3W_7ZKi/view?usp=drivesdk), [index.html](https://drive.google.com/file/d/1fCix0WQ6ZiL3PLA_6C5xCFynHa921zE_/view?usp=drivesdk), [style.css](https://drive.google.com/file/d/1J0ZkRvWXDtL-WeP_oJ9nsQ21RWRhqhbL/view?usp=drivesdk))**
 
-¼sªF¸Ü (zh-HK) Web Speech API »y­µ¾É¯è¤ŞÀº (initTTS, speakText)
-feedback.js
+1. **ä¸»é é¢ (`STATE_IDLE`) èˆ‡è¨“ç·´é é¢ (`STATE_TRAINING`) é›™å‘æ”¯æ´é¸æ“‡ã€Œäº’å‹•æ¨¡å¼ã€**ï¼š  
+   * **ä¸»é é¢ (`STATE_IDLE`)**ï¼šæ–¼ã€Œå‘¼å¸å¼•å°é¡¯ç¤ºæ¨¡å¼ã€æ–°å¢ `ğŸ¡ äº’å‹•æ¨¡å¼` æŒ‰éˆ• (`#btn-pacer-interactive`)ï¼Œé»é¸å¾Œå±•é–‹ `ğŸŒˆ é¢¨è»Š Pinwheel` (`#btn-interactive-pinwheel`) èˆ‡ `ğŸŒ¼ è’²å…¬è‹± Dandelion` (`#btn-interactive-dandelion`) å­ä¸»é¡Œé¸æ“‡å™¨ï¼›åŒæ™‚æ–¼ã€Œç›¸æ©Ÿé¡¯ç¤ºæ¨¡å¼ã€ä¸‹æ‹‰é¸å–® (`#select-privacy-mode`) æ–°å¢ `äº’å‹•æ¨¡å¼ Interactive Mode (é¢¨è»Š / è’²å…¬è‹±)` é¸é …ã€‚  
+   * **è¨“ç·´é é¢ (`STATE_TRAINING`)**ï¼šæ–¼é ‚éƒ¨å°èˆªåˆ—æ–°å¢ `ğŸ¡ äº’å‹•æ¨¡å¼ Interactive Mode` (`#btn-mode-interactive`) èˆ‡ `ğŸ¡ äº’å‹•æ¨¡å¼` (`#btn-train-interactive`) æŒ‰éˆ•ï¼Œä¸¦æ–¼ 3D äº’å‹•èˆå°é ‚éƒ¨ HUD æä¾› `ğŸŒˆ é¢¨è»Š Pinwheel` (`#mode-pinwheel-btn`)ã€`ğŸŒ¼ è’²å…¬è‹± Dandelion` (`#mode-dandelion-btn`) å³æ™‚åˆ‡æ›èˆ‡ `æŸ”å’ŒéŸ³æ¨‚ï¼šé–‹å•Ÿ/éœéŸ³` (`#music-toggle-btn`) æ§åˆ¶ã€‚  
+2. **ç‰ˆé¢é…ç½®èˆ‡ã€Œç´”å¼•å°æ¨¡å¼ (Pure Guiding Mode)ã€å®Œå…¨ä¸€è‡´**ï¼š  
+   * é€²å…¥ã€Œäº’å‹•æ¨¡å¼ã€æ™‚ï¼Œè‡ªå‹•æ”¶åˆå·¦å´è¦–è¨Šæ¬„ (`#vision-container`) ä¸¦å°‡ä¸­å¤®å¼•å°é¢æ¿ (`#guidance-panel`) æ“´å±•ç‚ºå…¨å¯¬å–®æ¬„ç½®ä¸­ä½ˆå±€ (`.pure-guiding-mode`)ï¼ŒåŒæ™‚èƒŒæ™¯ `<video id="train-video">` æŒçºŒåŸ·è¡Œ MediaPipe æœ¬åœ°ç«¯æ¨è«–ï¼Œä¸‹æ–¹å®Œæ•´å‘ˆç¾å››å¼µå¯¦æ™‚ç™¾åˆ†æ¯”ç”Ÿç‰©åé¥‹æŒ‡ç¤ºå¡èˆ‡åº•éƒ¨æ©«å¹…ã€‚  
+3. **å‹•ä½œåˆ†æè§¸ç™¼å¹é¢¨é‚è¼¯ (Motion-Analysis Blowing Trigger â€” å–ä»£æ‰‹å‹•æŒ‰ä½æŒ‰éˆ•)**ï¼š  
+   * ç§»é™¤åŸæœ¬ 3D æª”æ¡ˆä¸­éœ€è¦æ‰‹å‹•é•·æŒ‰æ»‘é¼ /è§¸æ§æˆ–ç©ºç™½éµçš„æŒ‰éµäº‹ä»¶ï¼Œæ”¹ç”± [training.js](https://drive.google.com/file/d/1DwOv0z_blXpGM2EtwXhg1nCVN4x9M04f/view?usp=drivesdk) ä¹‹å³æ™‚å‹•ä½œåˆ†æé©…å‹•ï¼š  
+     * **é–‹å§‹å¹é¢¨ (`startInteractiveBlowing`)**ï¼šç•¶ä½¿ç”¨è€…æ–¼å¸æ°£éšæ®µæˆåŠŸé”æˆã€Œåˆå£é¼»å¸æ°£ \+ ç„¡è³è‚©ä»£å„Ÿã€(`inhaleQualifiedForBlow === true`)ï¼Œä¸¦æ–¼é€²å…¥å‘¼æ°£éšæ®µå¾ŒæˆåŠŸä»¥ã€Œå™˜å”‡å‹•ä½œã€é–‹å§‹å‘¼æ°£ (`isPursedLipExhaleInitiated && isShoulderRelaxed`) æ™‚ï¼Œç³»çµ±è‡ªå‹•è¦–ç‚ºã€Œé–‹å§‹å¹é¢¨ï¼ˆæŒ‰ä½å¹é¢¨æŒ‰éˆ•ä¸æ”¾ï¼‰ã€ï¼Œé©…å‹• 3D é¢¨è»Šå‡é€ŸåŠ é€Ÿæ—‹è½‰æˆ– 3D è’²å…¬è‹±ç¨®å­éš¨é¢¨é£„æ•£ã€‚  
+     * **åœæ­¢å¹é¢¨ (`stopInteractiveBlowing`)**ï¼šç•¶ä½¿ç”¨è€…å®Œæˆè©²æ¬¡å™˜å”‡å‘¼æ°£ä¸¦åˆ‡æ›å›å¸æ°£éšæ®µ (`EXHALE -> INHALE`) æ™‚ï¼Œç³»çµ±è‡ªå‹•è¦–ç‚ºã€Œåœæ­¢å¹é¢¨ï¼ˆæ”¾é–‹å¹é¢¨æŒ‰éˆ•ï¼‰ã€ï¼Œè®“ 3D é¢¨è»Šå¹³æ»‘æ¸›é€Ÿåœä¸‹æˆ–è®“ 3D è’²å…¬è‹±çµ¨æ¯›ç¨®å­å¹³æ»‘é‡æ–°é•·å‡ºã€‚  
+4. **é›¢é–‹ã€Œäº’å‹•æ¨¡å¼ã€è‡ªå‹•æ¸…é™¤ Three.js è³‡æº (Memory Leak Prevention)**ï¼š  
+   * ç•¶ä½¿ç”¨è€…æ–¼è¨“ç·´é åˆ‡æ›é›¢é–‹ã€Œäº’å‹•æ¨¡å¼ã€ï¼ˆä¾‹å¦‚åˆ‡æ›è‡³å¯¦æ™‚é¡åƒæ¨¡å¼ã€å»è­˜åˆ¥åŒ–éª¨æ¶ç¶²æ ¼æ¨¡å¼ã€ç´”å¼•å°æ¨¡å¼ã€æ°£çƒæ¨¡å¼æˆ–çœŸäººç¤ºç¯„ï¼‰æˆ–é›¢é–‹è¨“ç·´é é¢ (`switchViewState`) æ™‚ï¼Œç³»çµ±è‡ªå‹•å‘¼å« `disposeInteractive3D()`ï¼Œå¾¹åº•é‡‹æ”¾æ‰€æœ‰ Three.js `BufferGeometry`ã€`Material`ã€`CanvasTexture`ã€`WebGLRenderer` Context (`forceContextLoss()`)ã€`requestAnimationFrame` åŠ Web Audio `AudioContext` è³‡æºï¼Œç¢ºä¿é›¶è¨˜æ†¶é«”æ´©æ¼ (Zero Memory Leak)ã€‚
 
-< 80% ³Ì§C¤ÀÀu¥ıÂê©w¡B³sÄò 10 ¬í§ïµ½¦Û°ÊÂà²¾´£¿ô»P¡u«ùÄò«O«ù¡v¦^õX¤ŞÀº (evaluateStickyPriorityFeedback)
-calibration.js
+# **2\. ES6 æ¨¡çµ„åŒ–æª”æ¡ˆçµæ§‹èˆ‡ AI ç¶­è­·å°èˆªè¡¨ (`v9/`)**
 
-¤­¨B­Ó¤H¤Æ°ÊºA°ò·Ç®Õ·Ç¡Bµø°T®Ø¨¾¾B¾×¤Á´«¡BEMA §Y®É¹wÄı»P 70% ®p­È§V¤O§é¦©°ÊºAìH­È­pºâ
-training.js
+| æª”æ¡ˆåç¨± | æ ¸å¿ƒè·è²¬èˆ‡åŒ¯å‡ºé …ç›® (Exports) |
+| :---- | :---- |
+| [index.html](https://drive.google.com/file/d/1fCix0WQ6ZiL3PLA_6C5xCFynHa921zE_/view?usp=drivesdk) | ä¸»é é¢èˆ‡è¨“ç·´é é¢çµæ§‹ï¼ˆå« `#interactive-3d-wrapper` 3D èˆå°ã€ä¸»é é¢èˆ‡è¨“ç·´é äº’å‹•æ¨¡å¼åˆ‡æ›å™¨ã€åº•éƒ¨ `#app-version-footer` ç‰ˆæœ¬ `v9` å‚™è¨»ï¼‰ |
+| [style.css](https://drive.google.com/file/d/1J0ZkRvWXDtL-WeP_oJ9nsQ21RWRhqhbL/view?usp=drivesdk) | è¼•æŸ”ç™‚ç™’é…è‰²ã€æ ¡æº–è¦–è¨Šæ¯›ç»ç’ƒéæ¸¡ã€ç´”å¼•å°æ¨¡å¼æ”¾å¤§æ¨£å¼åŠ v9 3D äº’å‹•æ¨¡å¼æ¨£å¼ (`#interactive-3d-stage`, `.bg-pinwheel`, `.bg-dandelion`, `.glass-pill`, `.spin-btn`) |
+| [app.js](https://drive.google.com/file/d/1ddcZ-BfMrN_2oKNUJBKjSqHDtS_Te9X7/view?usp=drivesdk) | ES6 å•Ÿå‹•å…¥å£ (`bootstrapApp`) èˆ‡å…¨ 14 æ¨¡çµ„ Barrel Re-exportsï¼ˆå« `interactive3d.js` èˆ‡ `scoring.js`ï¼‰ |
+| [interactive3d.js](https://drive.google.com/file/d/1i2ye4a-7vhuhK9aa7FGNOf5bVrjKf--U/view?usp=drivesdk) | **v9 æ–°å¢ 3D äº’å‹•æ¨¡å¼æ ¸å¿ƒæ¨¡çµ„**ï¼š`initInteractive3D`, `disposeInteractive3D`, `switchInteractiveObjectMode`, `startInteractiveBlowing`, `stopInteractiveBlowing`, `stepInteractivePhysics`, `toggleInteractiveAudioMute`, `getInteractive3DStats` |
+| [state.js](https://drive.google.com/file/d/1CHz2vGXR2YMqlOPLg3K06QqpwozmfBT2/view?usp=drivesdk) | ç³»çµ±å¸¸æ•¸ã€`THRESHOLDS`ã€`AppState`ï¼ˆæ–°å¢ `interactiveObject`, `inhaleQualifiedForBlow`, `isInteractiveBlowing` ç­‰äº’å‹•æ¨¡å¼ç‹€æ…‹æ¬„ä½ï¼‰ |
+| [dom.js](https://drive.google.com/file/d/13n3DLbMOOxXzptKsPlb0U2FYozVhx_Mw/view?usp=drivesdk) | 180 å€‹ DOM å…ƒç´ å¿«å–åƒç…§ (`dom`, `cacheDomElements`, å« 3D äº’å‹•èˆå°èˆ‡åº•éƒ¨ `v9` ç‰ˆæœ¬åˆ—) èˆ‡ `showToast` |
+| [scoring.js](https://drive.google.com/file/d/1XOFNp31XGF5dmuVHJdMzkPzSl1a4-jCm/view?usp=drivesdk) | å…¨ç¨‹ç´¯è¨ˆæ™‚é–“ç™¾åˆ†æ¯”é‹ç®— (`accumulateFrameScore`)ã€éšæ®µçµæŸè©•ä¼° (`evaluateCompletedPhase`) èˆ‡é€£çºŒå¤±æ•—æ’ç¨‹å¼•æ“ (`getHighestPriorityAlert`) |
+| [feedback.js](https://drive.google.com/file/d/1ABoDiYWhdpmG5L4ej0zW4wEkM1unNoho/view?usp=drivesdk) | åº•éƒ¨æ©«å¹…èˆ‡å»£æ±è©±èªéŸ³ç¶å®šå¼•æ“ (`evaluateStickyPriorityFeedback`, æ”¯æ´ç¥ç€ç´…è­¦ç¤ºæ©«å¹…èˆ‡ `âœ… åšå¾—éå¸¸å¥½ï¼Œç¹¼çºŒä¿æŒï¼` ç¶ è‰²æˆåŠŸæ©«å¹…) |
+| [calibration.js](https://drive.google.com/file/d/1YPrzkn0-ZeT30hEQKGjK0cUaBBKJfpBA/view?usp=drivesdk) | äº”æ­¥å€‹äººåŒ–å‹•æ…‹åŸºæº–æ ¡æº–ã€è¦–è¨Šå‰ç½®æ¯›ç»ç’ƒé®ç½©åˆ‡æ›èˆ‡ 70% å³°å€¼åŠªåŠ›æŠ˜æ‰£é–¾å€¼è¨ˆç®— |
+| [training.js](https://drive.google.com/file/d/1DwOv0z_blXpGM2EtwXhg1nCVN4x9M04f/view?usp=drivesdk) | å¯¦æ™‚è¨“ç·´ä¸»è¿´åœˆã€å‹•ä½œåˆ†æè§¸ç™¼ 3D å¹é¢¨ (`startInteractiveBlowing` / `stopInteractiveBlowing`)ã€å–®æ¬„ç´”å¼•å°/äº’å‹•ç‰ˆé¢åˆ‡æ›èˆ‡ç´¯è¨ˆæ™‚é–“ç™¾åˆ†æ¯”æ¸²æŸ“ |
+| [cvEngine.js](https://drive.google.com/file/d/13M0-OObK76PqAtNaxG8dOtP7NH-mXMW2/view?usp=drivesdk) | é¢éƒ¨ EMA æ¿¾æ³¢ (`smoothFacialSignalsEMA`)ã€P0.4 é€£çºŒæ¨¡ç³Šè©•åˆ† (`getInhaleScore`, `getExhaleScore`)ã€å‹•ä½œå‹•é‡è±å…èˆ‡è€³è‚©ä»£å„Ÿåµæ¸¬ |
+| [vision.js](https://drive.google.com/file/d/1-5o-FYWKzh9pl8kEcPJ5lJVA1vKhQoeG/view?usp=drivesdk) | `@mediapipe/tasks-vision@0.10.14` ESM æ¨¡å‹è¼‰å…¥èˆ‡ Face/Pose Landmarker åˆå§‹åŒ– |
+| [camera.js](https://drive.google.com/file/d/1gW4wxBK7ElSEUWIduTPvtor1RSV3P8Ew/view?usp=drivesdk) | WebRTC ç›¸æ©Ÿä¸²æµç®¡ç†èˆ‡ 6 å¤§è‡¨åºŠç›¸æ©ŸéŒ¯èª¤è¨ºæ–·å½ˆçª— |
+| [tts.js](https://drive.google.com/file/d/1hBKSXcVO1crmI3p_qq34OkBpeNaEdYEB/view?usp=drivesdk) | å»£æ±è©± (`zh-HK`) Web Speech API èªéŸ³åˆæˆ (`initTTS`, `speakText`) |
+| [summary.js](https://drive.google.com/file/d/1e66twFmeMx3BunVpGMwknI6eqtRV3H96/view?usp=drivesdk) | è¨“ç·´ç¸½çµå ±å‘Š (`renderSummaryReport`)ã€å»è­˜åˆ¥åŒ– CSV åŒ¯å‡ºèˆ‡æœ¬æ©Ÿæ­·å²ç´€éŒ„ |
+| [uiControls.js](https://drive.google.com/file/d/1Osj9ObVv7xP5dPFWQUCGgsjBQ3W_7ZKi/view?usp=drivesdk) | ç‹€æ…‹æ©Ÿåˆ‡æ› (`switchViewState`)ã€äº’å‹•æ¨¡å¼åˆ‡æ› (`activateInteractiveMode`)ã€Three.js è³‡æºé‡‹æ”¾æ›é‰¤èˆ‡å…¨åŸŸäº‹ä»¶ç¶å®š |
+| [sw.js](https://drive.google.com/file/d/14uTVwx6wC0xJb31YqaU5pg9nMDfGFXtp/view?usp=drivesdk), [manifest.json](https://drive.google.com/file/d/1VoorgTsHZFZWLlUd2DwDidrj84bxaxlP/view?usp=drivesdk), [vercel.json](https://drive.google.com/file/d/12C9eL-QPU1xblRE5Ihav8H97W9TzXpBW/view?usp=drivesdk) | PWA é›¢ç·šå¿«å– (`soothebreath-v9.0.0`)ã€å®‰è£è³‡è¨Šæ¸…å–®èˆ‡éœæ…‹éƒ¨ç½²è¨­å®š |
+| [1.jpg](https://drive.google.com/file/d/1CfF3eap44IFY3pY-tobtyk11rrAudeZ6/view?usp=drivesdk), [2.jpg](https://drive.google.com/file/d/1UHQwDz4oNzfmaEVfFtc6vfhl2_BCNZLi/view?usp=drivesdk), [3.jpg](https://drive.google.com/file/d/1KyLVln5cwPhiDFrKEvK8Wh-7-CATlpZN/view?usp=drivesdk), [4.jpg](https://drive.google.com/file/d/1jF68RQfgargyVrIEhdFEUJTcscnjS_wB/view?usp=drivesdk) | çœŸäººç¤ºç¯„æ¨¡å¼ç”·/å¥³æ€§å¸æ°£èˆ‡å‘¼æ°£å¯¦æ™¯åœ– |
+| [èˆ’å‘¼ (SootheBreath) â€” ç”¢å“éœ€æ±‚æ–‡ä»¶ (PRD v9.0) & AI Coding Blueprint (PWA)](https://docs.google.com/document/d/1fgcW4mlTU97boviBF2LKLKdNf2v_ARN_wXjtrzQDwTQ/edit) | å®Œæ•´ç”¢å“éœ€æ±‚è¦æ ¼æ›¸èˆ‡ AI æ¨¡çµ„åŒ–ç·¨ç¢¼è—åœ– (PRD v9.0) |
+| [èˆ’å‘¼ (SootheBreath) â€” v9.0 ç‰ˆæœ¬æ›´æ–°å ±å‘Š (Version Update Report)](https://docs.google.com/document/d/1skV9dZu19xkJRo2FZlq3Rmiglq92j_24AmNjKJk-uu0/edit) | v9.0 å‡ç´šé …ç›®ã€æŠ€è¡“å¯¦ä½œç´°ç¯€èˆ‡ç«¯åˆ°ç«¯è‡ªå‹•åŒ–é©—è­‰å ±å‘Š |
 
-¹ê®É°V½m¥D°j°é¡B¶}§½ 10 ¬í¡u²Î­p¤¤¡v½w½Ä¡B¤G¬q¦¡ 80% ¥d¤ù¼Ë¦¡ (applyModuleCardStyle) »P¦U¼Ò²Õ³sÄò§ïµ½¬í¼Æ­p®É (consecutiveImprovedSec)
-summary.js
-
-°V½mÁ`µ²³ø§i¥Í¦¨ (renderSummaryReport)¡B¥hÃÑ§O¤Æ CSV ¶×¥X (exportDeidentifiedCSV) »P¥»¾÷¾ú¥v¬ö¿ı
-uiControls.js
-
-ª¬ºA¾÷¤Á´« (switchViewState)¡BÁ{§Éºtºâªk½Õ¸Õ­±ªO (updateDebugReadouts) »P¥ş°ì UI ¨Æ¥óºÊÅ¥¾¹
-sw.js / manifest.json / vercel.json
-
-PWA v7.0 Â÷½u§Ö¨ú»PÀRºA³¡¸p³]©w¡A·f°t¯u¤H¥Ü½d¹ÏÀÉ 1.jpg¡V4.jpg

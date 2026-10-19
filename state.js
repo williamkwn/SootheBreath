@@ -1,27 +1,6 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v8.0)
- * ESM Core Engine: MediaPipe Tasks Vision 0.10.14
- *
- * v6.0 核心升級項目：
- * A) 主設定頁面與全域模式命名規範：
- *    1. 移除主設定頁面底部「廣東話 (zh-HK) 語音導航口令已預設開啟...」提示橫幅（背景維持預設開啟廣東話語音導航）。
- *    2. 全域統一英文相機模式首字母大寫：
- *       - 實時鏡像模式 Mirror Mode
- *       - 去識別化骨架網格模式 Privacy Mesh Mode
- *       - 純引導模式 Pure Guiding Mode
- * B) 鏡頭校準模式 (STATE_CALIBRATING) 升級為「五步個人化動態基準校準系統」：
- *    1. 五步依序動作採集：第1步【閉嘴】、第2步【張大口】、第3步【噘唇】、第4步【縮膊頭】、第5步【放鬆膊頭】。
- *    2. 治療師確認機制：每步進入「等待確認」狀態，點擊「✅ 確定開始採集此動作」後方進行 3 秒倒數採集（配廣東話語音）；
- *       提供「下一步」、「🔄 重測此動作」及「⏭️ 使用預設值並跳至下一步」兜底機制。
- *    3. 個人化動態閾值自動計算 (去極端值平均 Trimmed Mean + 安全上下限 Clamping) 並同步至 Debug Drawer 滑桿與數值。
- *    4. 五步個人化基準校準總結面板（支援單步重測或全部重測）與免鏡頭模擬模式 (Demo Mode) 完整五步模擬數據生成。
- * C) 訓練頁面 (STATE_TRAINING) 實時百分比生物反饋與鎖定平滑警示機制：
- *    1. 四張生物反饋指示卡改為顯示「實時合格率 / 準確度百分比 (0%–100%)」：
- *       【合口吸氣】、【噘唇呼氣】、【沉肩放鬆】、【呼吸速率】，隱藏卡片上之工程數值（僅保留於 Debug Drawer）。
- *    2. 最近 20 秒滾動時間窗 (Rolling Window) 實時計算 + 開局前 10 秒緩衝期（預設顯示 100% 且不觸發低分警示）；
- *       訓練結束 Summary 報告維持計算全程總平均。
- *    3. 三段式合格標準樣式：≥80%「合格達標」(綠)、70%–79%「持續保持」(淺藍/中性緩衝)、<70%「需要改善」(橙紅警示)。
- *    4. 最低分優先與「鎖定直到回升 ≥70%」平滑警示機制 (Sticky Priority Latch)。
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9)
+ * ESM Core Engine: MediaPipe Tasks Vision 0.10.14 + Three.js 3D Interactive Mode
  */
 
 // ============================================================================
@@ -153,12 +132,12 @@ export const HUMAN_IMAGES = {
   }
 };
 
-// 訓練滾動時間窗與開局緩衝期常數 (Section C.2)
-export const ROLLING_WINDOW_SECONDS = 20.0; // 最近 20 秒滾動時間窗
+// 訓練開局緩衝期與門檻常數
+export const ROLLING_WINDOW_SECONDS = 20.0;
 export const INITIAL_GRACE_SECONDS = 10.0;  // 前 10 秒開局緩衝期
 export const PHASE_ENTRY_GRACE_MS = 400;    // 吸呼雙向階段切換前 400ms 生理反應緩衝期 (每階段僅觸發一次)
-export const PASSING_SCORE_PCT = 80;        // 合格達標門檻 80% (< 80% 直接顯示「需要改善」並納入警示排程)
-export const CONSECUTIVE_IMPROVE_SECONDS = 10.0; // 連續 10 秒表現改善後即轉移提醒其他需要改善項目
+export const PASSING_SCORE_PCT = 80;        // 合格達標門檻 80%
+export const CONSECUTIVE_IMPROVE_SECONDS = 10.0;
 
 // 確保 MediaPipe 視訊時間戳嚴格遞增
 let lastVideoTimestamp = 0;
@@ -179,7 +158,6 @@ export function roundTo(val, decimals = 2) {
 
 /**
  * 指數移動平均濾波器 (Exponential Moving Average, EMA)
- * 用於消除 MediaPipe 原始特徵點高頻抖動 (±0.02 jitter)
  */
 export function ema(rawVal, prevVal, alpha) {
   if (typeof prevVal !== 'number' || Number.isNaN(prevVal)) return rawVal;
@@ -219,18 +197,21 @@ export const AppState = {
   calibTimerId: null,
   isCalibConfirming: false,
 
-  // 使用者設定 (僅設定 BPM [20 至 5]、吸呼比 [1:2 或 1:3]、訓練總時長 [1-10 分鐘滑桿])
+  // 使用者設定 (支援主頁面與訓練頁面選擇「互動模式」與風車/蒲公英子模式)
   targetBpm: 10,               // 目標呼吸頻率 BPM (範圍 20 至 5，預設 10 BPM)
   ieRatio: 2,                  // 目標吸呼比 1:2 或 1:3 (值為 2 或 3)
   inhaleTarget: 2.0,           // 由 BPM 與吸呼比自動計算：60 / BPM / (1 + ieRatio)
   exhaleTarget: 4.0,           // 由 BPM 與吸呼比自動計算：inhaleTarget * ieRatio
   totalDuration: 120,          // 訓練總時長秒數 (1 至 10 分鐘滑桿，預設 2 分鐘 = 120 秒)
-  privacyMode: 'privacy_mesh', // 'mirror' (實時鏡像模式 Mirror Mode) | 'privacy_mesh' (去識別化骨架網格模式 Privacy Mesh Mode) | 'minimalist' (純引導模式 Pure Guiding Mode)
-  displayMode: 'balloon',      // 'balloon' | 'human'
+  privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist' | 'interactive'
+  lastNonInteractivePrivacyMode: 'privacy_mesh', // 記憶切換至互動模式前的相機模式
+  displayMode: 'balloon',      // 'balloon' | 'human' | 'interactive'
+  lastNonInteractiveDisplayMode: 'balloon',      // 記憶切換至互動模式前的引導模式
   humanGender: 'male',         // 'male' (男性) | 'female' (女性)
+  interactiveObject: 'pinwheel', // 'pinwheel' (風車) | 'dandelion' (蒲公英)
   voiceEnabled: true,          // 廣東話 (zh-HK) 語音導航口令：預設背景開啟 (Default ON)
 
-  // EMA 平滑濾波狀態器 (涵蓋雙肩 Pose 11/12 與面部 LAR / jawOpen / mouthPucker / mouthFunnel 及 Δ 趨勢)
+  // EMA 平滑濾波狀態器
   ema: {
     initialized: false,
     y11Prev: 0,
@@ -246,11 +227,11 @@ export const AppState = {
     deltaMouthFunnel: 0
   },
 
-  // 五步個人化動態基準校準狀態與結果 (Section B)
+  // 五步個人化動態基準校準狀態與結果
   calibration: {
-    currentStep: 1,            // 1 至 5
-    subState: 'WAITING_CONFIRM', // 'WAITING_CONFIRM' | 'COUNTDOWN' | 'STEP_DONE' | 'SUMMARY'
-    retestSingleStepMode: false, // 若從總結面板單獨重測某一步，完成後可直接返回總結
+    currentStep: 1,
+    subState: 'WAITING_CONFIRM',
+    retestSingleStepMode: false,
     countdownRemaining: 3,
     stepSamples: {
       dEye: [],
@@ -262,7 +243,7 @@ export const AppState = {
       yShoulder: []
     },
     stepSource: {
-      1: 'default', // 'measured' | 'default'
+      1: 'default',
       2: 'default',
       3: 'default',
       4: 'default',
@@ -270,7 +251,6 @@ export const AppState = {
     },
     stepSampleCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
 
-    // 五步採集之個人化基準數值
     LAR_closed: DEFAULT_CALIB_BASELINES.LAR_closed,
     jawOpen_closed: DEFAULT_CALIB_BASELINES.jawOpen_closed,
     D_eye: DEFAULT_CALIB_BASELINES.D_eye,
@@ -282,14 +262,13 @@ export const AppState = {
     Dist_shrug: DEFAULT_CALIB_BASELINES.Dist_shrug,
     Dist_relax: DEFAULT_CALIB_BASELINES.Dist_relax,
 
-    // 與核心訓練算法對接之別名欄位
     dEyeBase: DEFAULT_CALIB_BASELINES.D_eye,
     distBase: DEFAULT_CALIB_BASELINES.Dist_base,
     yShoulderBase: DEFAULT_CALIB_BASELINES.yShoulderBase,
     larRest: DEFAULT_CALIB_BASELINES.LAR_closed
   },
 
-  // 實時推論變數 (lar, jawOpen, mouthPucker, mouthFunnel 均為 EMA 濾波後數值)
+  // 實時推論變數
   currentMetrics: {
     dEye: 0.22,
     larRaw: 0.04,
@@ -327,7 +306,7 @@ export const AppState = {
     cycleStartTime: 0,
     cycleIndex: 0,
 
-    // 雙向 400ms 階段轉換緩衝期單次觸發鎖定狀態 (Bidirectional 400ms Entry Grace — Strictly Once Per Phase Cycle)
+    // 雙向 400ms 階段轉換緩衝期單次觸發鎖定狀態
     inhaleGraceCycleTriggered: -1,
     inhaleEntryTimestamp: 0,
     inhaleGraceCompleted: false,
@@ -344,13 +323,16 @@ export const AppState = {
     tInActual: 0,
     tExActual: 0,
 
+    // v9 互動模式（風車 / 蒲公英）動作分析觸發吹氣狀態
+    inhaleLipClosedTime: 0,
+    inhaleNoShrugTime: 0,
+    inhalePhaseTime: 0,
+    inhaleQualifiedForBlow: false,
+    isInteractiveBlowing: false,
+
     // 實時呼吸頻率 (Actual RR, breaths/min)
     avgRR: 10.0,
-
-    // 最近 20 秒滾動時間窗樣本佇列 (Section C.2)
     rollingWindow: [],
-
-    // 開局前 10 秒緩衝期狀態 (期間保持累計百分比運算開啟，但不觸發任何警示或成功橫幅)
     isWarmingUp: true,
 
     // 四大模組全程累計時間百分比 (Cumulative Total Time Percentage: 0% - 100%)
@@ -366,7 +348,7 @@ export const AppState = {
       shoulder: { totalTime: 0, errorTime: 0 }
     },
 
-    // 連續失敗計數與「需要改善排程」(Alert Schedule: consecutiveFails >= 2 觸發; 連續 2 次 Pass 解鎖)
+    // 連續失敗計數與「需要改善排程」
     alertSchedule: {
       inhale: { key: 'inhale', label: '合口吸氣', consecutiveFails: 0, consecutivePasses: 0, inAlertSchedule: false, lastPhaseResult: 'PASS', order: 2 },
       exhale: { key: 'exhale', label: '噘唇呼氣', consecutiveFails: 0, consecutivePasses: 0, inAlertSchedule: false, lastPhaseResult: 'PASS', order: 3 },
@@ -389,11 +371,11 @@ export const AppState = {
     validShoulderTimeSec: 0
   },
 
-  // 鎖定平滑過渡警示機制 (Sticky Priority Latch · <80% 警示與連續 10 秒改善轉移)
+  // 鎖定平滑過渡警示機制
   feedback: {
-    latchedModule: null,       // null | 'inhale' | 'exhale' | 'shoulder' | 'rr'
-    latchedImprovedSec: 0,     // 當前鎖定項目已連續改善之秒數 (滿 10 秒轉移)
-    satisfiedBy10s: {          // 已透過連續 10 秒改善而解除鎖定之項目
+    latchedModule: null,
+    latchedImprovedSec: 0,
+    satisfiedBy10s: {
       inhale: false,
       exhale: false,
       shoulder: false,
@@ -414,4 +396,3 @@ export const AppState = {
     speechSynthesisVoice: null
   }
 };
-

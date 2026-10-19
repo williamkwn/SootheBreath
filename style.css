@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v8.0 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準與實時百分比反饋)
+   v9 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準、實時百分比反饋與 3D 互動模式)
    ========================================================================== */
 
 :root {
@@ -193,7 +193,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none !important;
 }
 
-/* Task A: Calibration Video Box & Control Panel Non-Overlapping Containment (v8.0) */
+/* Calibration Video Box & Control Panel Non-Overlapping Containment */
 #calib-step-workspace:not(.hidden) {
   display: grid;
   align-items: start;
@@ -244,7 +244,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   z-index: 100 !important;
 }
 
-/* Task B: Pure Guiding Mode (~40% Training Page Bubble & Human Demo Sizing) */
+/* Pure Guiding Mode (~40% Training Page Bubble & Human Demo Sizing) */
 .pure-guiding-ring {
   width: clamp(250px, 40vmin, 420px) !important;
   height: clamp(250px, 40vmin, 420px) !important;
@@ -283,4 +283,115 @@ input[type="range"]::-webkit-slider-thumb:hover {
 #calib-canvas,
 #train-canvas {
   pointer-events: none;
+}
+
+/* ==========================================================================
+   v9 3D Interactive Mode (互動模式 · 風車 Pinwheel & 蒲公英 Dandelion) Styles
+   ========================================================================== */
+#interactive-3d-stage {
+  position: relative;
+  width: 100%;
+  max-width: 48rem;
+  height: clamp(270px, 43vh, 430px);
+  border-radius: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 14px 36px -6px rgba(15, 23, 42, 0.22);
+  border: 2px solid rgba(77, 182, 172, 0.35);
+  transition: background 0.6s ease;
+}
+
+#interactive-3d-stage.bg-pinwheel {
+  background: radial-gradient(
+    130% 120% at 15% 82%,
+    #f2d3b8 0%,
+    #efe7d6 38%,
+    #dadcd2 70%,
+    #c6cdc4 100%
+  );
+}
+
+#interactive-3d-stage.bg-dandelion {
+  background: #243d07;
+}
+
+#bg-dof-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.55s ease;
+  filter: blur(22px) saturate(1.15);
+  transform: scale(1.08);
+}
+
+#interactive-canvas-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.sun-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.5s ease;
+  background:
+    radial-gradient(circle at 14% 76%, rgba(255, 218, 175, 0.35) 0%, rgba(255, 218, 175, 0) 55%),
+    radial-gradient(circle at 85% 22%, rgba(190, 205, 200, 0.20) 0%, rgba(190, 205, 200, 0) 50%);
+}
+
+.glass-pill {
+  background: rgba(18, 28, 22, 0.68);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 10px 28px -6px rgba(0, 0, 0, 0.30),
+    0 2px 8px -1px rgba(0, 0, 0, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.20);
+}
+
+.mode-tab {
+  transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mode-tab.active {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.38);
+}
+
+.spin-btn {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s ease,
+              background-color 0.25s ease,
+              border-color 0.25s ease;
+  touch-action: none;
+}
+
+.spin-btn.active-hold {
+  transform: scale(0.97) translateY(1px);
+  background: rgba(24, 38, 28, 0.94);
+  border-color: rgba(251, 191, 36, 0.88);
+  box-shadow:
+    0 6px 24px -4px rgba(251, 191, 36, 0.38),
+    0 0 0 4px rgba(251, 191, 36, 0.22),
+    inset 0 2px 4px rgba(251, 191, 36, 0.15);
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  70% { transform: scale(1.18); opacity: 0; }
+  100% { transform: scale(1.22); opacity: 0; }
+}
+
+.wind-ring {
+  animation: pulseRing 1.6s infinite cubic-bezier(0.25, 0.8, 0.25, 1);
 }

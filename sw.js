@@ -1,15 +1,14 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 Service Worker (sw.js v8.0.0)
- * Network-First strategy for local files + Precache for offline & Human Mode JPG assets
+ * 舒呼 (SootheBreath) — PWA Service Worker (sw.js)
+ * Version: v9.0.0 (ES6 14-Module Architecture with 3D Interactive Mode)
  */
 
-const CACHE_NAME = 'soothebreath-v8.0.0';
-
-const PRECACHE_ASSETS = [
+const CACHE_NAME = 'soothebreath-v9.0.0';
+const APP_SHELL_ASSETS = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
+  './style.css?v=9.0',
+  './app.js?v=9.0',
   './state.js',
   './dom.js',
   './vision.js',
@@ -19,6 +18,7 @@ const PRECACHE_ASSETS = [
   './tts.js',
   './feedback.js',
   './calibration.js',
+  './interactive3d.js',
   './training.js',
   './summary.js',
   './uiControls.js',
@@ -33,24 +33,24 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return Promise.allSettled(
-        PRECACHE_ASSETS.map((asset) => cache.add(asset).catch(() => {}))
-      );
+      return cache.addAll(APP_SHELL_ASSETS).catch((err) => {
+        console.warn('[SW v9] Partial cache warning:', err);
+      });
     })
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keyList) => {
-      return Promise.all(
-        keyList.map((key) => {
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.map((key) => {
           if (key !== CACHE_NAME) {
             return caches.delete(key);
           }
         })
-      );
-    }).then(() => self.clients.claim())
+      )
+    ).then(() => self.clients.claim())
   );
 });
 
@@ -58,35 +58,17 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-
-  // External MediaPipe WASM / Task models / Tailwind CDN: Cache-First for fast & offline startup
-  if (url.origin !== location.origin) {
+  if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-        return fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200 &&
-              (url.hostname.includes('jsdelivr') || url.hostname.includes('googleapis') || url.hostname.includes('tailwindcss'))) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+      fetch(event.request)
+        .then((networkResp) => {
+          if (networkResp && networkResp.status === 200) {
+            const copy = networkResp.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           }
-          return networkResponse;
-        }).catch(() => cachedResponse);
-      })
+          return networkResp;
+        })
+        .catch(() => caches.match(event.request))
     );
-    return;
   }
-
-  // Local HTML/JS/CSS/JPG: Network-First with Offline Cache Fallback
-  event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
-        }
-        return networkResponse;
-      })
-      .catch(() => caches.match(event.request))
-  );
 });

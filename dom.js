@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — dom.js
+ * 舒呼(SootheBreath) v9 ES6 Module — dom.js
  * DOM 元素快取與非阻塞式提示通知 (DOM Element References & Toast Utility)
  */
 
@@ -10,12 +10,13 @@ export const dom = {};
 
 export function cacheDomElements() {
   Object.assign(dom, {
-    // 狀態視圖容器
+    // 狀態視圖容器與底部版本備註
     stateIdle: document.getElementById('state-idle'),
     stateCalib: document.getElementById('state-calibrating'),
     stateTrain: document.getElementById('state-training'),
     stateSummary: document.getElementById('state-summary'),
     bottomBanner: document.getElementById('bottom-banner'),
+    appVersionFooter: document.getElementById('app-version-footer'),
     toast: document.getElementById('toast-notification'),
     toastText: document.getElementById('toast-text'),
 
@@ -31,13 +32,17 @@ export function cacheDomElements() {
     inputDuration: document.getElementById('input-duration'),
     valDurationMins: document.getElementById('val-duration-mins'),
 
-    // 設定面板 2：顯示模式 (STATE_IDLE)
+    // 設定面板 2：顯示模式 (STATE_IDLE — 支援氣球、真人示範與 v9 互動模式)
     selectPrivacy: document.getElementById('select-privacy-mode'),
     btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
     btnPacerHuman: document.getElementById('btn-pacer-human'),
+    btnPacerInteractive: document.getElementById('btn-pacer-interactive'),
     wrapperHumanGender: document.getElementById('wrapper-human-gender'),
     btnGenderMale: document.getElementById('btn-gender-male'),
     btnGenderFemale: document.getElementById('btn-gender-female'),
+    wrapperInteractiveObject: document.getElementById('wrapper-interactive-object'),
+    btnInteractivePinwheel: document.getElementById('btn-interactive-pinwheel'),
+    btnInteractiveDandelion: document.getElementById('btn-interactive-dandelion'),
     btnStart: document.getElementById('btn-start'),
     btnStartDemo: document.getElementById('btn-start-demo'),
 
@@ -86,7 +91,7 @@ export function cacheDomElements() {
     trainCanvas: document.getElementById('train-canvas'),
     badgeMeshMode: document.getElementById('badge-mesh-mode'),
 
-    // 訓練畫面頂部狀態與右上角控制按鈕
+    // 訓練畫面頂部狀態與右上角控制按鈕 (含 v9 互動模式按鈕)
     pillPhase: document.getElementById('pill-phase'),
     pillCycle: document.getElementById('pill-cycle'),
     valCycleCount: document.getElementById('val-cycle-count'),
@@ -95,12 +100,14 @@ export function cacheDomElements() {
     btnModeMirror: document.getElementById('btn-mode-mirror'),
     btnModeMesh: document.getElementById('btn-mode-mesh'),
     btnModeMinimal: document.getElementById('btn-mode-minimal'),
+    btnModeInteractive: document.getElementById('btn-mode-interactive'),
     btnTrainBalloon: document.getElementById('btn-train-balloon'),
     btnTrainMale: document.getElementById('btn-train-male'),
     btnTrainFemale: document.getElementById('btn-train-female'),
+    btnTrainInteractive: document.getElementById('btn-train-interactive'),
     btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
 
-    // 呼吸節奏球與真人示範元件
+    // 呼吸節奏球、真人示範與 v9 3D 互動模式 (風車 / 蒲公英) 元件
     pacerVisualArea: document.getElementById('pacer-visual-area'),
     pacerOuterRing: document.getElementById('pacer-outer-ring'),
     pacerBall: document.getElementById('pacer-ball'),
@@ -112,9 +119,29 @@ export function cacheDomElements() {
     imgHumanExhale: document.getElementById('img-human-exhale'),
     humanActionText: document.getElementById('human-action-text'),
     humanSecondsText: document.getElementById('human-seconds-text'),
+    interactive3dWrapper: document.getElementById('interactive-3d-wrapper'),
+    interactive3dStage: document.getElementById('interactive-3d-stage'),
+    bgDofCanvas: document.getElementById('bg-dof-canvas'),
+    interactiveCanvasContainer: document.getElementById('interactive-canvas-container'),
+    sunGlowOverlay: document.getElementById('sun-glow-overlay'),
+    statusDot: document.getElementById('status-dot'),
+    statusText: document.getElementById('status-text'),
+    modePinwheelBtn: document.getElementById('mode-pinwheel-btn'),
+    modeDandelionBtn: document.getElementById('mode-dandelion-btn'),
+    musicToggleBtn: document.getElementById('music-toggle-btn'),
+    iconSoundOn: document.getElementById('icon-sound-on'),
+    iconSoundOff: document.getElementById('icon-sound-off'),
+    audioLabel: document.getElementById('audio-label'),
+    speedMeterWrap: document.getElementById('speed-meter-wrap'),
+    speedMeterBar: document.getElementById('speed-meter-bar'),
+    btnPulseRing: document.getElementById('btn-pulse-ring'),
+    spinHoldBtn: document.getElementById('spin-hold-btn'),
+    windIcon: document.getElementById('wind-icon'),
+    btnMainText: document.getElementById('btn-main-text'),
+    btnSubText: document.getElementById('btn-sub-text'),
     pacerPhaseHint: document.getElementById('pacer-phase-hint'),
 
-    // 四張實時百分比生物反饋指示卡 (Section C.1 & C.3)
+    // 四張實時百分比生物反饋指示卡
     biofeedbackCardsGrid: document.getElementById('biofeedback-cards-grid'),
     cardInhale: document.getElementById('card-status-inhale'),
     textInhaleState: document.getElementById('text-inhale-state'),
@@ -203,4 +230,3 @@ export function showToast(message) {
     setTimeout(() => dom.toast.classList.add('hidden'), 300);
   }, 2800);
 }
-
