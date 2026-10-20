@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v9 Gentle Soothing Clinical UI Stylesheet (輕柔療癒風格 · 五步個人化基準校準、實時百分比反饋與 3D 互動模式)
+   v9.1 Gentle Soothing Clinical UI Stylesheet (P0–P2 60 FPS 高效能 3D 互動模式優化版)
    ========================================================================== */
 
 :root {
@@ -286,7 +286,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* ==========================================================================
-   v9 3D Interactive Mode (互動模式 · 風車 Pinwheel & 蒲公英 Dandelion) Styles
+   v9.1 3D Interactive Mode Styles (P1-1: Zero Real-Time CSS Blur Over WebGL)
    ========================================================================== */
 #interactive-3d-stage {
   position: relative;
@@ -297,7 +297,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   overflow: hidden;
   box-shadow: 0 14px 36px -6px rgba(15, 23, 42, 0.22);
   border: 2px solid rgba(77, 182, 172, 0.35);
-  transition: background 0.6s ease;
+  contain: layout paint;
+  isolation: isolate;
 }
 
 #interactive-3d-stage.bg-pinwheel {
@@ -314,6 +315,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: #243d07;
 }
 
+/* P1-1: Pre-baked soft low-res canvas — no real-time CSS filter: blur(22px) needed */
 #bg-dof-canvas {
   position: absolute;
   inset: 0;
@@ -322,9 +324,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   z-index: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.55s ease;
-  filter: blur(22px) saturate(1.15);
-  transform: scale(1.08);
+  transition: opacity 0.45s ease;
 }
 
 #interactive-canvas-container {
@@ -346,44 +346,41 @@ input[type="range"]::-webkit-slider-thumb:hover {
     radial-gradient(circle at 85% 22%, rgba(190, 205, 200, 0.20) 0%, rgba(190, 205, 200, 0) 50%);
 }
 
+/* P1-1: GPU-friendly high-contrast pill without expensive per-frame WebGL backdrop-filter readback */
 .glass-pill {
-  background: rgba(18, 28, 22, 0.68);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(18, 28, 22, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.24);
   box-shadow:
-    0 10px 28px -6px rgba(0, 0, 0, 0.30),
-    0 2px 8px -1px rgba(0, 0, 0, 0.18),
-    inset 0 1px 1px rgba(255, 255, 255, 0.20);
+    0 8px 20px -4px rgba(0, 0, 0, 0.28),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18);
 }
 
 .mode-tab {
-  transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .mode-tab.active {
   background: linear-gradient(135deg, #fbbf24, #f59e0b);
   color: #0f172a;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.38);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
 }
 
 .spin-btn {
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-              box-shadow 0.25s ease,
-              background-color 0.25s ease,
-              border-color 0.25s ease;
+  transition: transform 0.2s ease,
+              box-shadow 0.2s ease,
+              background-color 0.2s ease,
+              border-color 0.2s ease;
   touch-action: none;
 }
 
 .spin-btn.active-hold {
   transform: scale(0.97) translateY(1px);
-  background: rgba(24, 38, 28, 0.94);
+  background: rgba(24, 38, 28, 0.95);
   border-color: rgba(251, 191, 36, 0.88);
   box-shadow:
-    0 6px 24px -4px rgba(251, 191, 36, 0.38),
-    0 0 0 4px rgba(251, 191, 36, 0.22),
-    inset 0 2px 4px rgba(251, 191, 36, 0.15);
+    0 6px 20px -4px rgba(251, 191, 36, 0.35),
+    0 0 0 3px rgba(251, 191, 36, 0.22);
 }
 
 @keyframes pulseRing {

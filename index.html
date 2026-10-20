@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>舒呼(SootheBreath) 呼吸復康訓練 (v9)</title>
+  <title>舒呼(SootheBreath) 呼吸復康訓練 (v9.1)</title>
   
   <!-- PWA Settings -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4DB6AC">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v9">
+  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v9.1">
   
   <!-- Tailwind CSS Play CDN v3.4 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Three.js r128 for v9 3D Interactive Mode (Pinwheel & Dandelion) -->
+  <!-- Three.js r128 for v9.1 3D Interactive Mode (Pinwheel & Dandelion) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     if (typeof tailwind !== 'undefined') {
@@ -42,8 +42,8 @@
     }
   </script>
   
-  <!-- Style Sheet (with v=9.0 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=9.0">
+  <!-- Style Sheet (with v=9.1 cache buster + inline critical styles) -->
+  <link rel="stylesheet" href="style.css?v=9.1">
   <style>
 :root {
   --inhale-color: #4DB6AC;
@@ -78,7 +78,7 @@ html, body {
       <div>
         <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
           舒呼(SootheBreath) 呼吸復康訓練
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v9</span>
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v9.1</span>
         </h1>
       </div>
     </div>
@@ -187,7 +187,7 @@ html, body {
             </div>
           </div>
 
-          <!-- Card B: 顯示模式 (含 v9 互動模式選擇) -->
+          <!-- Card B: 顯示模式 (含 v9.1 互動模式選擇) -->
           <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-4 flex flex-col justify-start">
             <div class="space-y-4">
               <label class="text-sm font-extrabold text-slate-800 block">顯示模式</label>
@@ -211,7 +211,7 @@ html, body {
                 </div>
               </div>
 
-              <!-- v9 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
+              <!-- v9.1 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
               <div id="wrapper-interactive-object" class="hidden space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80">
                 <span class="text-xs text-amber-900 font-semibold block">互動模式 3D 主題選擇 (風車 / 蒲公英)：</span>
                 <div class="flex gap-2">
@@ -220,7 +220,7 @@ html, body {
                 </div>
               </div>
 
-              <!-- Camera Display Mode Selector (Capitalized English Mode Names + Interactive Mode) -->
+              <!-- Camera Display Mode Selector -->
               <div class="space-y-1.5">
                 <span class="text-xs text-slate-600 font-medium block">相機顯示模式：</span>
                 <select id="select-privacy-mode" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
@@ -343,7 +343,7 @@ html, body {
                 採集指標：個人閉口嘴唇比 (LAR_closed)、下頜閉合基準 (jawOpen_closed)、雙眼間距 (D_eye)
               </div>
 
-              <!-- Fixed-Height Countdown / Status Box (Never changes size during 3-2-1 countdown) -->
+              <!-- Fixed-Height Countdown / Status Box -->
               <div class="bg-white rounded-2xl border border-teal-100 px-3 py-2.5 text-center h-[108px] flex flex-col items-center justify-between shadow-2xs overflow-hidden">
                 <div id="calib-countdown" class="text-2xl md:text-3xl font-black text-teal-800 leading-none h-10 flex items-center justify-center">
                   等待確認
@@ -358,7 +358,7 @@ html, body {
               </div>
             </div>
 
-            <!-- Secondary Therapist Action Buttons (Retest / Previous / Default Fallback) -->
+            <!-- Secondary Therapist Action Buttons -->
             <div class="space-y-1.5 pt-1 shrink-0">
               <div class="flex gap-2">
                 <button id="btn-calib-retest-step" type="button" class="hidden flex-1 py-1.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
@@ -369,7 +369,6 @@ html, body {
                 </button>
               </div>
 
-              <!-- Fallback Default Button -->
               <button id="btn-calib-use-default" type="button" class="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition cursor-pointer">
                 ⏭️ 使用預設值並跳至下一步
               </button>
@@ -395,13 +394,11 @@ html, body {
               </p>
             </div>
 
-            <!-- 5 Steps Captured Data Breakdown -->
             <div class="space-y-1.5">
               <h4 class="text-xs font-extrabold text-slate-700">1. 五個動作採集基準數據：</h4>
               <div id="calib-summary-metrics" class="text-xs font-mono"></div>
             </div>
 
-            <!-- Auto-computed Dynamic Thresholds Breakdown -->
             <div class="space-y-1.5">
               <h4 class="text-xs font-extrabold text-slate-700">2. 自動生成之個人化動態閾值 (Dynamic Thresholds)：</h4>
               <div id="calib-summary-thresholds"></div>
@@ -425,7 +422,7 @@ html, body {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v9 3D 互動模式 風車 / 蒲公英) -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v9.1 60 FPS 高效能 3D 互動模式) -->
     <!-- ========================================================================= -->
     <div id="state-training" class="hidden flex-1 flex flex-col overflow-hidden relative bg-[#f5fafd]">
 
@@ -450,7 +447,6 @@ html, body {
 
         <!-- Right Mode Switcher + Human/Balloon/Interactive Switcher + 🔄 重校準 -->
         <div class="flex flex-wrap items-center gap-1.5">
-          <!-- Camera & Layout Mode Switcher (Capitalized English Mode Names + v9 互動模式) -->
           <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button id="btn-mode-mirror" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">實時鏡像模式 Mirror Mode</button>
             <button id="btn-mode-mesh" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-xs transition cursor-pointer">去識別化骨架網格模式 Privacy Mesh Mode</button>
@@ -458,7 +454,6 @@ html, body {
             <button id="btn-mode-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式 Interactive Mode</button>
           </div>
 
-          <!-- Pacer Visual Switcher (氣球 / 男性 / 女性 / 互動模式) -->
           <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button id="btn-train-balloon" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-xs transition cursor-pointer">🎈 氣球</button>
             <button id="btn-train-male" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👨 男性</button>
@@ -466,7 +461,6 @@ html, body {
             <button id="btn-train-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式</button>
           </div>
 
-          <!-- TRAINING 右上角 🔄 重校準 按鈕 -->
           <button id="btn-train-recalibrate" type="button" class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1">
             <span>🔄</span>
             <span>重校準</span>
@@ -477,21 +471,19 @@ html, body {
       <!-- Training Body (Left Vision + Right/Center Pacer & Biofeedback) -->
       <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        <!-- Left Column / Vision Feed (60% in Mirror/Mesh mode; collapsed in Pure Guiding & Interactive Mode) -->
+        <!-- Left Column / Vision Feed -->
         <div id="vision-container" class="w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0">
           <video id="train-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
           <canvas id="train-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
 
-          <!-- Bottom-Left Camera Display Mode Badge -->
           <div id="badge-mesh-mode" class="absolute bottom-3 left-3 z-20 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-900/85 text-teal-300 border border-teal-500/30 backdrop-blur pointer-events-none">
             🔒 去識別化骨架網格模式 Privacy Mesh Mode
           </div>
         </div>
 
-        <!-- Right / Center Guidance Column (40% in Mirror/Mesh mode; 100% Centered in Pure Guiding & Interactive Mode) -->
+        <!-- Right / Center Guidance Column -->
         <div id="guidance-panel" class="w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3">
           
-          <!-- Dynamic Breathing Pacer Sphere OR Human Demonstration OR v9 3D Interactive Mode -->
           <div id="pacer-visual-area" class="flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center">
             
             <!-- Mode 1: Gentle Breathing Pacer Sphere (Balloon Mode) -->
@@ -514,10 +506,10 @@ html, body {
               </div>
             </div>
 
-            <!-- Mode 3 (v9): 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
+            <!-- Mode 3 (v9.1): 60 FPS 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
             <div id="interactive-3d-wrapper" class="hidden w-full flex flex-col items-center justify-center mx-auto">
               <div id="interactive-3d-stage" class="bg-pinwheel relative select-none text-slate-100">
-                <!-- Shallow Depth-of-Field Blurred Grassland Background (for Dandelion Mode) -->
+                <!-- Pre-baked Soft Grassland Background (for Dandelion Mode — Zero Real-Time CSS Blur) -->
                 <canvas id="bg-dof-canvas"></canvas>
                 <!-- 3D Scene Container -->
                 <div id="interactive-canvas-container"></div>
@@ -556,7 +548,7 @@ html, body {
                   </div>
                 </div>
 
-                <!-- Bottom Motion-Triggered Blowing Status Bar (Replaced manual button press with motion-analysis trigger) -->
+                <!-- Bottom Motion-Triggered Blowing Status Bar -->
                 <div class="absolute bottom-0 inset-x-0 z-10 pb-3 sm:pb-4 pt-2 px-4 flex flex-col items-center justify-end pointer-events-none">
                   <div id="speed-meter-wrap" class="w-48 sm:w-60 h-1.5 bg-slate-900/45 rounded-full overflow-hidden mb-2 opacity-0 transition-opacity duration-300 border border-white/20">
                     <div id="speed-meter-bar" class="h-full w-0 bg-gradient-to-r from-amber-400 via-emerald-400 to-sky-400 rounded-full transition-none"></div>
@@ -589,7 +581,6 @@ html, body {
           <!-- 4 Real-Time Clinical Biofeedback Percentage Cards -->
           <div id="biofeedback-cards-grid" class="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5">
             
-            <!-- Module 1: 合口吸氣 -->
             <div id="card-status-inhale" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">👃</div>
@@ -601,7 +592,6 @@ html, body {
               <div id="badge-inhale-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
-            <!-- Module 2: 噘唇呼氣 -->
             <div id="card-status-exhale" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">👄</div>
@@ -613,7 +603,6 @@ html, body {
               <div id="badge-exhale-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
-            <!-- Module 3: 沉肩放鬆 -->
             <div id="card-status-shoulder" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">🧘</div>
@@ -625,7 +614,6 @@ html, body {
               <div id="badge-shoulder-pct" class="text-2xl md:text-3xl font-black font-mono text-[#2E7D32]">100%</div>
             </div>
 
-            <!-- Module 4: 呼吸速率 -->
             <div id="card-status-rr" class="p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm">
               <div class="flex items-center space-x-2.5">
                 <div class="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-lg shadow-2xs">🫁</div>
@@ -639,7 +627,7 @@ html, body {
 
           </div>
 
-          <!-- Training Control Buttons (Pause & Stop Early) -->
+          <!-- Training Control Buttons -->
           <div class="w-full max-w-2xl mx-auto flex gap-2.5 pt-1">
             <button id="btn-pause-train" type="button" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition cursor-pointer">
               ⏸️ 暫停訓練
@@ -739,10 +727,10 @@ html, body {
   </main>
 
   <!-- ========================================== -->
-  <!-- Bottom Version Number Remark Footer (v9) -->
+  <!-- Bottom Version Number Remark Footer (v9.1) -->
   <!-- ========================================== -->
   <footer id="app-version-footer" class="w-full py-1.5 px-4 text-center text-xs font-bold text-slate-500 bg-white/85 border-t border-teal-100/80 shrink-0 z-20">
-    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v9
+    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v9.1
   </footer>
 
   <!-- ========================================== -->
@@ -912,21 +900,21 @@ html, body {
     <span id="toast-text">操作成功</span>
   </div>
 
-  <!-- Clean old Service Worker caches & register v9 Service Worker -->
+  <!-- Clean old Service Worker caches & register v9.1 Service Worker -->
   <script>
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'soothebreath-v9.0.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v9.1.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=9.0')
+        navigator.serviceWorker.register('sw.js?v=9.1')
           .then(reg => {
             reg.update();
-            console.log('舒呼 SootheBreath PWA Service Worker v9 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v9.1 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -934,6 +922,6 @@ html, body {
   </script>
 
   <!-- Load ES6 Modular JavaScript Application Entry Point -->
-  <script type="module" src="./app.js?v=9.0"></script>
+  <script type="module" src="./app.js?v=9.1"></script>
 </body>
 </html>

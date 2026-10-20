@@ -1,6 +1,15 @@
 /**
- * 舒呼(SootheBreath) v9 ES6 Module — training.js
- * 實時訓練主迴圈、全程累計時間百分比、階段結束評估與 v9 3D 互動模式 (風車 / 蒲公英) 動作感測觸發引擎
+ * 舒呼(SootheBreath) v9.1 ES6 Module — training.js
+ * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論與 DOM Dirty-Check 節流引擎
+ *
+ * v9.1 效能優化重點 (P0-1 & P1-2):
+ * - [P0-1] 單一主迴圈 + MediaPipe 推論降頻與單雙幀交錯：
+ *          - 統一於 trainingInferenceLoop 結尾呼叫 renderInteractive3DFrame(dt)，消除雙重 requestAnimationFrame 互搶資源。
+ *          - 設定 INFERENCE_INTERVAL_MS = 50 (20 FPS)，並於互動模式下單雙次推論交錯執行 FaceLandmarker 與 PoseLandmarker，主執行緒負載降低 >65%。
+ * - [P1-2] DOM 更新節流 (UI_THROTTLE_MS = 120) 與隱藏元件跳過 (Eliminate Layout Thrashing)：
+ *          - 互動模式下自動跳過已隱藏之 #pacer-ball 與 #human-demo-box 樣式更新。
+ *          - 四張百分比指示卡、倒數計時器與提示文字採用 Dirty-Check + 120ms 節流更新。
+ *          - 調試面板 (updateDebugReadouts) 僅於面板展開時每 150ms 更新一次。
  */
 
 import {
@@ -11,6 +20,8 @@ import {
   INITIAL_GRACE_SECONDS,
   PHASE_ENTRY_GRACE_MS,
   PASSING_SCORE_PCT,
+  INFERENCE_INTERVAL_MS,
+  UI_THROTTLE_MS,
   getNextTimestamp,
   clampVal,
   AppState
@@ -42,9 +53,19 @@ import {
   disposeInteractive3D,
   switchInteractiveObjectMode,
   startInteractiveBlowing,
-  stopInteractiveBlowing
+  stopInteractiveBlowing,
+  renderInteractive3DFrame
 } from './interactive3d.js';
 import { switchViewState, updateDebugReadouts } from './uiControls.js';
+
+// Dirty-check cache to prevent redundant DOM reflows/repaints
+const domCache = {
+  timerLeft: '',
+  cycleCount: -1,
+  phaseHint: '',
+  lastUiUpdateTs: 0,
+  lastDebugUpdateTs: 0
+};
 
 // ============================================================================
 // 10. 實時訓練主迴圈與四大百分比指標 (Section C: STATE_TRAINING)
@@ -60,6 +81,8 @@ export async function runTrainingSequence() {
 
   AppState.training.startTime = now;
   AppState.training.lastFrameTime = now;
+  AppState.training.lastInferenceTime = 0;
+  AppState.training.inferenceTickCount = 0;
   AppState.training.phaseStartTime = now;
   AppState.training.cycleStartTime = now;
   AppState.ema.initialized = false;
@@ -84,6 +107,13 @@ export async function runTrainingSequence() {
   AppState.training.isInteractiveBlowing = false;
   AppState.training.avgRR = targetRR;
   AppState.training.isWarmingUp = true;
+
+  domCache.timerLeft = '';
+  domCache.cycleCount = -1;
+  domCache.phaseHint = '';
+  domCache.lastUiUpdateTs = 0;
+  domCache.lastDebugUpdateTs = 0;
+
   resetScoringState();
 
   AppState.feedback.latchedModule = null;
@@ -118,13 +148,6 @@ export function syncCanvasDimensions() {
   }
 }
 
-/**
- * 切換相機與訓練版面模式：
- * - 實時鏡像模式 Mirror Mode ('mirror')
- * - 去識別化骨架網格模式 Privacy Mesh Mode ('privacy_mesh')
- * - 純引導模式 Pure Guiding Mode ('minimalist')
- * - 互動模式 Interactive Mode ('interactive' — 版面與純引導模式完全一致，整合 3D 風車/蒲公英)
- */
 export function applyPrivacyModeStyles() {
   const mode = AppState.privacyMode;
   if (dom.selectPrivacy && dom.selectPrivacy.value !== mode) {
@@ -141,7 +164,6 @@ export function applyPrivacyModeStyles() {
   const isSingleColumnGuideLayout = (mode === 'minimalist' || mode === 'interactive');
 
   if (isSingleColumnGuideLayout) {
-    // 純引導模式 Pure Guiding Mode 與 互動模式 Interactive Mode 共用全寬置中單欄版面
     if (dom.visionContainer) {
       dom.visionContainer.className = "w-px h-px opacity-0 pointer-events-none fixed -left-[9999px] overflow-hidden";
     }
@@ -164,7 +186,6 @@ export function applyPrivacyModeStyles() {
       dom.biofeedbackCardsGrid.className = "w-full max-w-3xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-3";
     }
   } else {
-    // 雙欄模式：實時鏡像模式 Mirror Mode / 去識別化骨架網格模式 Privacy Mesh Mode
     if (dom.visionContainer) {
       dom.visionContainer.className = "w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0";
     }
@@ -204,10 +225,6 @@ export function applyPrivacyModeStyles() {
   }
 }
 
-/**
- * 切換呼吸引導顯示模式：氣球模式 vs 真人示範 (男性 / 女性) vs 互動模式 (風車 / 蒲公英)
- * 當離開「互動模式」時，自動呼叫 disposeInteractive3D() 清除 Three.js 資源防止 Memory Leak
- */
 export function applyDisplayModeStyles() {
   const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
   const isHuman = (!isInteractive && AppState.displayMode === 'human');
@@ -265,7 +282,6 @@ export function applyDisplayModeStyles() {
       switchInteractiveObjectMode(interObj);
     }
   } else {
-    // 當用戶切換離開「互動模式」，確保 Three.js 資源自動清走，防止 Memory Leak
     disposeInteractive3D();
   }
 
@@ -279,6 +295,9 @@ export function applyDisplayModeStyles() {
   }
 }
 
+// ============================================================================
+// P0-1 & P1-2: 單一 60 FPS 訓練與 3D 渲染迴圈 + MediaPipe 20Hz 交錯推論 + DOM 節流
+// ============================================================================
 export function trainingInferenceLoop() {
   if (AppState.currentState !== STATES.TRAINING) return;
 
@@ -298,8 +317,15 @@ export function trainingInferenceLoop() {
   const remainingTotal = Math.max(0, AppState.totalDuration - elapsedTotal);
   const mins = Math.floor(remainingTotal / 60);
   const secs = Math.floor(remainingTotal % 60);
-  dom.valTimerLeft.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  dom.valCycleCount.textContent = train.cycleIndex;
+  const timerStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  if (timerStr !== domCache.timerLeft) {
+    domCache.timerLeft = timerStr;
+    dom.valTimerLeft.textContent = timerStr;
+  }
+  if (train.cycleIndex !== domCache.cycleCount) {
+    domCache.cycleCount = train.cycleIndex;
+    dom.valCycleCount.textContent = train.cycleIndex;
+  }
 
   if (remainingTotal <= 0) {
     finalizeCurrentCycle(now, train.isSoftTransitioning);
@@ -307,38 +333,62 @@ export function trainingInferenceLoop() {
     return;
   }
 
-  // 1. 即時更新實測呼吸頻率 (Actual RR)
-  updateLiveRespiratoryRate(now);
+  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const shouldRunInference = (now - (train.lastInferenceTime || 0)) >= INFERENCE_INTERVAL_MS;
 
-  // 2. 取得視訊推論或模擬特徵點並更新累計時間百分比與互動吹風判定
-  if (AppState.isDemoMode) {
-    const sim = generateSimulatedDetections(now);
-    AppState.lastFaceResult = sim.faceResult;
-    AppState.lastPoseResult = sim.poseResult;
-    processFrameDetections(sim.faceResult, sim.poseResult, now, dt);
-  } else if (dom.trainVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
-    try {
-      const ts = getNextTimestamp();
-      const faceResult = AppState.faceLandmarker.detectForVideo(dom.trainVideo, ts);
-      const poseResult = AppState.poseLandmarker.detectForVideo(dom.trainVideo, ts);
+  // 1. P0-1: MediaPipe 推論降頻 (20 FPS) 與單雙幀交錯推論 (Staggered Face/Pose Inference)
+  if (shouldRunInference) {
+    const inferenceDt = train.lastInferenceTime > 0
+      ? Math.min(0.25, Math.max(0.001, (now - train.lastInferenceTime) / 1000))
+      : dt;
+    train.lastInferenceTime = now;
+    train.inferenceTickCount = (train.inferenceTickCount || 0) + 1;
 
-      AppState.lastFaceResult = faceResult;
-      AppState.lastPoseResult = poseResult;
+    updateLiveRespiratoryRate(now);
 
-      processFrameDetections(faceResult, poseResult, now, dt);
-    } catch (e) {
-      console.warn("推論幀略過:", e);
+    if (AppState.isDemoMode) {
+      const sim = generateSimulatedDetections(now);
+      AppState.lastFaceResult = sim.faceResult;
+      AppState.lastPoseResult = sim.poseResult;
+      processFrameDetections(sim.faceResult, sim.poseResult, now, inferenceDt);
+    } else if (dom.trainVideo.readyState >= 2 && AppState.faceLandmarker && AppState.poseLandmarker) {
+      try {
+        const ts = getNextTimestamp();
+        if (isInteractive && AppState.lastFaceResult && AppState.lastPoseResult) {
+          // 互動模式下單雙次推論交錯執行 Face 與 Pose，將單幀 AI 推論時間減半
+          if (train.inferenceTickCount % 2 === 1) {
+            AppState.lastFaceResult = AppState.faceLandmarker.detectForVideo(dom.trainVideo, ts);
+          } else {
+            AppState.lastPoseResult = AppState.poseLandmarker.detectForVideo(dom.trainVideo, ts);
+          }
+        } else {
+          AppState.lastFaceResult = AppState.faceLandmarker.detectForVideo(dom.trainVideo, ts);
+          AppState.lastPoseResult = AppState.poseLandmarker.detectForVideo(dom.trainVideo, ts);
+        }
+        processFrameDetections(AppState.lastFaceResult, AppState.lastPoseResult, now, inferenceDt);
+      } catch (e) {
+        console.warn("推論幀略過:", e);
+      }
     }
   }
 
-  // 3. 呼吸節奏狀態機推進 (包含呼氣 70% 柔性過渡)
+  // 2. 呼吸節奏狀態機推進 (P1-2: 互動模式下自動跳過隱藏氣球之 DOM 操作)
   advanceBreathingPacer(now);
 
-  // 4. 繪製視覺 Canvas 覆蓋層
-  renderTrainingCanvas(AppState.lastFaceResult, AppState.lastPoseResult);
+  // 3. 繪製視覺 Canvas 或驅動 60 FPS 3D 互動模式渲染 (P0-1: 單一主迴圈整合)
+  if (isInteractive) {
+    renderInteractive3DFrame(dt);
+  } else if (AppState.privacyMode !== 'minimalist') {
+    renderTrainingCanvas(AppState.lastFaceResult, AppState.lastPoseResult);
+  }
 
-  // 5. 更新調試面板讀數
-  updateDebugReadouts();
+  // 4. P1-2: 僅於調試面板展開時以 150ms 節流更新讀數
+  if (dom.debugDrawer && !dom.debugDrawer.classList.contains('translate-x-full')) {
+    if (now - domCache.lastDebugUpdateTs >= 150) {
+      domCache.lastDebugUpdateTs = now;
+      updateDebugReadouts();
+    }
+  }
 
   requestAnimationFrame(trainingInferenceLoop);
 }
@@ -368,7 +418,10 @@ export function updateLiveRespiratoryRate(now) {
 
   train.avgRR = liveAvgRR;
   if (dom.valLiveRr) {
-    dom.valLiveRr.textContent = liveAvgRR.toFixed(1);
+    const nextRr = liveAvgRR.toFixed(1);
+    if (dom.valLiveRr.textContent !== nextRr) {
+      dom.valLiveRr.textContent = nextRr;
+    }
   }
 }
 
@@ -393,7 +446,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
   const face = faceResult.faceLandmarks[0];
   const pose = poseResult.landmarks[0];
 
-  // 【C.1 原始訊號 EMA 濾波】先對 LAR、jawOpen、mouthPucker、mouthFunnel 進行 EMA 濾波再進入評分
   m.dEye = calculateDEye(face);
   const larRaw = calculateLAR(face);
   const blendshapes = extractBlendshapes(faceResult.faceBlendshapes);
@@ -416,7 +468,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
   m.deltaJawOpen = smoothedFace.deltaJawOpen;
   m.deltaMouthPucker = smoothedFace.deltaMouthPucker;
 
-  // EMA 雙肩平滑 + 軀幹耳肩相對基準定位 (Torso Anchoring)
   const shoulder = calculateShoulderMetrics(pose, m.dEye, cal.distBase);
   m.y11Smooth = shoulder.y11Smooth;
   m.y12Smooth = shoulder.y12Smooth;
@@ -426,18 +477,15 @@ export function processFrameDetections(faceResult, poseResult, now = performance
   m.deltaYShoulder = shoulder.deltaYRelative;
   m.shoulderTilt = shoulder.shoulderTilt;
 
-  // 沉肩指標連續評分與合格判定
   const isShoulderRelaxed = m.deltaYRelative <= THRESHOLDS.shoulderHikeWarn;
   const shoulderScore = isShoulderRelaxed
     ? 1.0
     : clampVal(1 - (m.deltaYRelative - THRESHOLDS.shoulderHikeWarn) / Math.max(THRESHOLDS.shoulderHikeWarn * 0.5, 0.02), 0, 1);
   m.shoulderScore = shoulderScore;
 
-  // 【C.2 連續模糊評分 (0.0 – 1.0)】取代單純布林一刀切
   let inhaleScore = getInhaleScore(m.lar, m.jawOpen);
   let exhaleScore = getExhaleScore(m.lar, m.mouthPucker, m.mouthFunnel);
 
-  // 【C.5 動作動量豁免 (Action-Momentum Exemption — Δ Trend Check)】
   inhaleScore = applyActionMomentumExemption(PHASES.INHALE, inhaleScore, m.deltaLar, m.deltaMouthPucker);
   exhaleScore = applyActionMomentumExemption(PHASES.EXHALE, exhaleScore, m.deltaLar, m.deltaMouthPucker);
 
@@ -445,7 +493,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
   const rawExhaleMotionScore = exhaleScore;
 
   if (train.currentPhase === PHASES.INHALE) {
-    // 【v9 互動模式吸氣資格累積】檢查吸氣階段是否「合口鼻吸氣 + 無聳肩代償」
     train.inhalePhaseTime = (train.inhalePhaseTime || 0) + dt;
     if (rawInhaleMotionScore >= 0.70) {
       train.inhaleLipClosedTime = (train.inhaleLipClosedTime || 0) + dt;
@@ -457,7 +504,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
     const noShrugRatio = train.inhaleNoShrugTime / Math.max(0.001, train.inhalePhaseTime);
     train.inhaleQualifiedForBlow = (lipClosedRatio >= 0.50) && (noShrugRatio >= 0.50);
 
-    // 【雙向 400ms 階段轉換緩衝期 — 吸氣開頭 400ms，每週期嚴格僅觸發一次】
     if (!train.inhaleGraceCompleted) {
       if (train.inhaleGraceCycleTriggered === train.cycleIndex && (now - train.inhaleEntryTimestamp) <= PHASE_ENTRY_GRACE_MS) {
         inhaleScore = 1.0;
@@ -467,17 +513,12 @@ export function processFrameDetections(faceResult, poseResult, now = performance
     }
     m.inhaleScore = inhaleScore;
   } else {
-    // 呼氣階段 (EXHALE)
-    // 【v9 互動模式吹風觸發】
-    // 當使用者已成功完成「合口吸氣 + 無聳肩代償」，並於呼氣階段成功以「噘唇動作」開始呼氣時，
-    // 即視為開始吹風 (按住吹風按鈕不放)，直到呼氣結束切換回吸氣階段時才放開。
     const isPursedLipExhaleInitiated = (rawExhaleMotionScore >= 0.70) || isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel);
     if (!train.isInteractiveBlowing && train.inhaleQualifiedForBlow && isPursedLipExhaleInitiated && isShoulderRelaxed) {
       train.isInteractiveBlowing = true;
       startInteractiveBlowing();
     }
 
-    // 【雙向 400ms 階段轉換緩衝期 — 呼氣開頭 400ms，每週期嚴格僅觸發一次】
     if (!train.exhaleGraceCompleted) {
       if (train.exhaleGraceCycleTriggered === train.cycleIndex && (now - train.exhaleEntryTimestamp) <= PHASE_ENTRY_GRACE_MS) {
         exhaleScore = 1.0;
@@ -506,7 +547,6 @@ export function processFrameDetections(faceResult, poseResult, now = performance
     m.exhaleScore = exhaleScore;
   }
 
-  // 全程累計時間百分比運算 (Cumulative Total Time Percentage)
   train.isWarmingUp = (train.elapsedSeconds < INITIAL_GRACE_SECONDS);
   accumulateFrameScore(
     train.currentPhase,
@@ -517,36 +557,47 @@ export function processFrameDetections(faceResult, poseResult, now = performance
     isShoulderRelaxed
   );
 
-  // 模組 4【呼吸速率】準確度百分比
   const targetRR = Math.max(1, AppState.targetBpm);
   const actualRR = train.avgRR;
   train.pctRr = clampVal(Math.max(0, Math.round((1 - Math.abs(actualRR - targetRR) / targetRR) * 100)), 0, 100);
 
-  renderIndicatorCards();
+  if (now - domCache.lastUiUpdateTs >= UI_THROTTLE_MS || domCache.lastUiUpdateTs === 0) {
+    domCache.lastUiUpdateTs = now;
+    renderIndicatorCards();
+  }
   evaluateStickyPriorityFeedback(true);
 }
 
 // ----------------------------------------------------------------------------
-// 節奏球 / 真人示範 / 3D 互動模式與週期狀態機推進
+// P1-2: 節奏球 / 真人示範 / 3D 互動模式推進 (互動模式下跳過隱藏氣球之 DOM 重排)
 // ----------------------------------------------------------------------------
 export function advanceBreathingPacer(now) {
   const train = AppState.training;
   const phaseElapsed = (now - train.phaseStartTime) / 1000;
+  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const isHuman = (!isInteractive && AppState.displayMode === 'human');
 
   if (train.currentPhase === PHASES.INHALE) {
     const progress = Math.min(1, phaseElapsed / AppState.inhaleTarget);
     const secsLeft = Math.max(0, AppState.inhaleTarget - phaseElapsed).toFixed(1);
+    const nextHint = `閉口由鼻吸氣 (${secsLeft}s) · 雙肩保持下沉`;
 
-    dom.pacerActionText.textContent = "用鼻吸氣";
-    dom.pacerSecondsText.textContent = `${secsLeft}s`;
-    if (dom.humanActionText) dom.humanActionText.textContent = "用鼻吸氣";
-    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
-    if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = `閉口由鼻吸氣 (${secsLeft}s) · 雙肩保持下沉`;
+    if (dom.pacerPhaseHint && domCache.phaseHint !== nextHint) {
+      domCache.phaseHint = nextHint;
+      dom.pacerPhaseHint.textContent = nextHint;
+    }
 
-    const scale = 0.85 + (progress * 0.45);
-    dom.pacerBall.style.transform = `scale(${scale})`;
-    const isMinimalIn = (AppState.privacyMode === "minimalist" || AppState.privacyMode === "interactive");
-    dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimalIn ? "pure-guiding-ball " : ""}rounded-full pacer-inhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
+    if (!isInteractive) {
+      if (isHuman) {
+        if (dom.humanActionText && dom.humanActionText.textContent !== "用鼻吸氣") dom.humanActionText.textContent = "用鼻吸氣";
+        if (dom.humanSecondsText && dom.humanSecondsText.textContent !== `${secsLeft}s`) dom.humanSecondsText.textContent = `${secsLeft}s`;
+      } else {
+        if (dom.pacerActionText.textContent !== "用鼻吸氣") dom.pacerActionText.textContent = "用鼻吸氣";
+        if (dom.pacerSecondsText.textContent !== `${secsLeft}s`) dom.pacerSecondsText.textContent = `${secsLeft}s`;
+        const scale = 0.85 + (progress * 0.45);
+        dom.pacerBall.style.transform = `scale(${scale})`;
+      }
+    }
 
     if (phaseElapsed >= AppState.inhaleTarget) {
       evaluateCompletedPhase(PHASES.INHALE, train.elapsedSeconds);
@@ -557,20 +608,26 @@ export function advanceBreathingPacer(now) {
       const softDuration = 0.35;
       const softElapsed = (now - train.softTransitionStartTime) / 1000;
       const softProgress = Math.min(1, softElapsed / softDuration);
-      const startScale = train.softTransitionStartScale || 0.95;
-      const scale = startScale - (startScale - 0.85) * softProgress;
 
-      dom.pacerActionText.textContent = "合格呼氣完成";
-      dom.pacerSecondsText.textContent = "平順過渡";
-      if (dom.humanActionText) dom.humanActionText.textContent = "合格呼氣完成";
-      if (dom.humanSecondsText) dom.humanSecondsText.textContent = "平順過渡";
-      if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = "呼氣已達標完成 · 平順進入下一次吸氣";
+      const nextHint = "呼氣已達標完成 · 平順進入下一次吸氣";
+      if (dom.pacerPhaseHint && domCache.phaseHint !== nextHint) {
+        domCache.phaseHint = nextHint;
+        dom.pacerPhaseHint.textContent = nextHint;
+      }
 
-      dom.pacerBall.style.transform = `scale(${scale})`;
+      if (!isInteractive) {
+        const startScale = train.softTransitionStartScale || 0.95;
+        const scale = startScale - (startScale - 0.85) * softProgress;
+        dom.pacerActionText.textContent = "合格呼氣完成";
+        dom.pacerSecondsText.textContent = "平順過渡";
+        if (dom.humanActionText) dom.humanActionText.textContent = "合格呼氣完成";
+        if (dom.humanSecondsText) dom.humanSecondsText.textContent = "平順過渡";
+        dom.pacerBall.style.transform = `scale(${scale})`;
 
-      if (dom.imgHumanInhale && dom.imgHumanExhale) {
-        dom.imgHumanInhale.classList.add('active-img');
-        dom.imgHumanExhale.classList.remove('active-img');
+        if (dom.imgHumanInhale && dom.imgHumanExhale) {
+          dom.imgHumanInhale.classList.add('active-img');
+          dom.imgHumanExhale.classList.remove('active-img');
+        }
       }
 
       if (softProgress >= 1) {
@@ -585,17 +642,24 @@ export function advanceBreathingPacer(now) {
 
     const progress = Math.min(1, phaseElapsed / AppState.exhaleTarget);
     const secsLeft = Math.max(0, AppState.exhaleTarget - phaseElapsed).toFixed(1);
+    const nextHint = `嘴唇噘起如吹蠟燭 (${secsLeft}s) · 均勻慢呼`;
 
-    dom.pacerActionText.textContent = "噘唇吹氣";
-    dom.pacerSecondsText.textContent = `${secsLeft}s`;
-    if (dom.humanActionText) dom.humanActionText.textContent = "噘唇吹氣";
-    if (dom.humanSecondsText) dom.humanSecondsText.textContent = `${secsLeft}s`;
-    if (dom.pacerPhaseHint) dom.pacerPhaseHint.textContent = `嘴唇噘起如吹蠟燭 (${secsLeft}s) · 均勻慢呼`;
+    if (dom.pacerPhaseHint && domCache.phaseHint !== nextHint) {
+      domCache.phaseHint = nextHint;
+      dom.pacerPhaseHint.textContent = nextHint;
+    }
 
-    const scale = 1.30 - (progress * 0.45);
-    dom.pacerBall.style.transform = `scale(${scale})`;
-    const isMinimalEx = (AppState.privacyMode === "minimalist" || AppState.privacyMode === "interactive");
-    dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimalEx ? "pure-guiding-ball " : ""}rounded-full pacer-exhale-style flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
+    if (!isInteractive) {
+      if (isHuman) {
+        if (dom.humanActionText && dom.humanActionText.textContent !== "噘唇吹氣") dom.humanActionText.textContent = "噘唇吹氣";
+        if (dom.humanSecondsText && dom.humanSecondsText.textContent !== `${secsLeft}s`) dom.humanSecondsText.textContent = `${secsLeft}s`;
+      } else {
+        if (dom.pacerActionText.textContent !== "噘唇吹氣") dom.pacerActionText.textContent = "噘唇吹氣";
+        if (dom.pacerSecondsText.textContent !== `${secsLeft}s`) dom.pacerSecondsText.textContent = `${secsLeft}s`;
+        const scale = 1.30 - (progress * 0.45);
+        dom.pacerBall.style.transform = `scale(${scale})`;
+      }
+    }
 
     if (phaseElapsed >= AppState.exhaleTarget) {
       evaluateCompletedPhase(PHASES.EXHALE, train.elapsedSeconds);
@@ -616,7 +680,6 @@ export function triggerPhaseSwitch(newPhase) {
   train.softTransitionStartTime = 0;
 
   if (newPhase === PHASES.INHALE) {
-    // 當使用者完成噘唇呼氣並切換回吸氣階段時，視為停止吹風 (放開按鈕)
     stopInteractiveBlowing();
     train.isInteractiveBlowing = false;
     train.inhaleLipClosedTime = 0;
@@ -630,13 +693,11 @@ export function triggerPhaseSwitch(newPhase) {
       train.inhaleGraceCompleted = false;
     }
   } else if (newPhase === PHASES.EXHALE) {
-    // 剛完成吸氣進入呼氣：確認吸氣階段是否合口且無聳肩代償
     if ((train.inhalePhaseTime || 0) > 0.05) {
       const lipClosedRatio = (train.inhaleLipClosedTime || 0) / train.inhalePhaseTime;
       const noShrugRatio = (train.inhaleNoShrugTime || 0) / train.inhalePhaseTime;
       train.inhaleQualifiedForBlow = (lipClosedRatio >= 0.50) && (noShrugRatio >= 0.50);
     } else {
-      // 若於週期中段剛切換進入訓練，依據當前幀是否合口且沉肩判定
       const m = AppState.currentMetrics;
       train.inhaleQualifiedForBlow = (m.inhaleScore >= 0.70) && (m.shoulderScore >= 0.70);
     }
@@ -649,6 +710,10 @@ export function triggerPhaseSwitch(newPhase) {
   }
 
   const isInhale = newPhase === PHASES.INHALE;
+  const isMinimal = (AppState.privacyMode === "minimalist" || AppState.privacyMode === "interactive");
+  if (dom.pacerBall) {
+    dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimal ? "pure-guiding-ball " : ""}rounded-full ${isInhale ? "pacer-inhale-style" : "pacer-exhale-style"} flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
+  }
   if (dom.imgHumanInhale && dom.imgHumanExhale) {
     dom.imgHumanInhale.classList.toggle('active-img', isInhale);
     dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
@@ -666,6 +731,8 @@ export function triggerPhaseSwitch(newPhase) {
     dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#FF7043] text-white shadow-sm";
     speakText("慢慢噘唇呼氣", true);
   }
+
+  renderIndicatorCards();
 }
 
 export function finalizeCurrentCycle(now = performance.now(), wasSoftTransition = false) {
@@ -691,24 +758,36 @@ export function finalizeCurrentCycle(now = performance.now(), wasSoftTransition 
   train.tExActual = 0;
 }
 
+/**
+ * P1-2: 加入 Dirty-Check，僅在文字或樣式實際改變時寫入 DOM，消除無謂之 Style Recalculation
+ */
 export function applyModuleCardStyle(cardEl, stateEl, pctEl, pctVal, isLatchedTarget = false, inAlertSchedule = false) {
   if (!cardEl || !stateEl || !pctEl) return;
 
   const clamped = clampVal(Math.round(pctVal ?? 100), 0, 100);
-  pctEl.textContent = `${clamped}%`;
-
-  if (!inAlertSchedule && clamped >= PASSING_SCORE_PCT) {
-    stateEl.textContent = "合格達標";
-    stateEl.className = "text-xs md:text-sm font-extrabold text-[#2E7D32]";
-    pctEl.className = "text-2xl md:text-3xl font-black font-mono text-[#2E7D32]";
-    cardEl.className = "p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
-  } else {
-    stateEl.textContent = isLatchedTarget ? "需要改善 (優先修正)" : "需要改善";
-    stateEl.className = "text-xs md:text-sm font-extrabold text-rose-600";
-    pctEl.className = "text-2xl md:text-3xl font-black font-mono text-rose-600";
-    const pulseCls = isLatchedTarget ? " shoulder-alert-active" : "";
-    cardEl.className = `p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm${pulseCls}`;
+  const nextPctText = `${clamped}%`;
+  if (pctEl.textContent !== nextPctText) {
+    pctEl.textContent = nextPctText;
   }
+
+  let nextStateText, nextStateCls, nextPctCls, nextCardCls;
+  if (!inAlertSchedule && clamped >= PASSING_SCORE_PCT) {
+    nextStateText = "合格達標";
+    nextStateCls = "text-xs md:text-sm font-extrabold text-[#2E7D32]";
+    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-[#2E7D32]";
+    nextCardCls = "p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
+  } else {
+    nextStateText = isLatchedTarget ? "需要改善 (優先修正)" : "需要改善";
+    nextStateCls = "text-xs md:text-sm font-extrabold text-rose-600";
+    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-rose-600";
+    const pulseCls = isLatchedTarget ? " shoulder-alert-active" : "";
+    nextCardCls = `p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm${pulseCls}`;
+  }
+
+  if (stateEl.textContent !== nextStateText) stateEl.textContent = nextStateText;
+  if (stateEl.className !== nextStateCls) stateEl.className = nextStateCls;
+  if (pctEl.className !== nextPctCls) pctEl.className = nextPctCls;
+  if (cardEl.className !== nextCardCls) cardEl.className = nextCardCls;
 }
 
 export function renderIndicatorCards() {
@@ -759,15 +838,15 @@ export function renderIndicatorCards() {
 export function renderTrainingCanvas(faceResults, poseResults) {
   const canvas = dom.trainCanvas;
   if (!canvas) return;
+  const mode = AppState.privacyMode;
+  if (mode === 'minimalist' || mode === 'interactive') return;
+
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
-  const mode = AppState.privacyMode;
   const m = AppState.currentMetrics;
 
   ctx.clearRect(0, 0, w, h);
-
-  if (mode === 'minimalist' || mode === 'interactive') return;
 
   if (mode === 'privacy_mesh' || AppState.isDemoMode) {
     ctx.fillStyle = '#0f172a';

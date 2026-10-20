@@ -1,7 +1,7 @@
 {
-  "name": "舒呼(SootheBreath) 呼吸復康訓練 (v9)",
-  "short_name": "舒呼 v9",
-  "description": "慢性阻塞性肺病 (COPD) 臨床呼吸復康系統 · 五步個人化動態基準校準、實時百分比生物反饋與 3D 風車/蒲公英互動模式 (v9)",
+  "name": "舒呼(SootheBreath) 呼吸復康訓練 (v9.1)",
+  "short_name": "舒呼 v9.1",
+  "description": "慢性阻塞性肺病 (COPD) 臨床呼吸復康系統 · 五步個人化動態基準校準、實時百分比生物反饋與 60 FPS 3D 風車/蒲公英互動模式 (v9.1)",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f5fafd",
