@@ -1,6 +1,6 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — feedback.js
- * 連續失敗警示排程 (Alert Schedule) 優先順序與底部橫幅/語音回饋引擎
+ * 舒呼(SootheBreath) v9.2 ES6 Module — feedback.js
+ * 三層優先警示排程 (Alert Schedule / 實時錯誤 / <80% 卡片對齊) 與底部橫幅/語音回饋引擎
  */
 
 import { STATES, INITIAL_GRACE_SECONDS, AppState } from './state.js';
@@ -86,21 +86,26 @@ export function evaluateStickyPriorityFeedback(hasFaceAndPose) {
     return;
   }
 
-  // 取得「需要改善排程」中最高優先級之指標 (1. consecutiveFails 最高優先; 2. 累計 % 最低優先)
+  // Fix 3: 取得三層優先級警示 (1. 連續失敗排程; 2. 當前階段實時連續錯誤 >=0.9s; 3. 累計百分比 <80% 未解鎖)
   const topAlert = getHighestPriorityAlert();
 
   if (topAlert) {
+    const isConsecutiveSchedule = topAlert.consecutiveFails >= 2;
+    const statusTag = isConsecutiveSchedule
+      ? `連續 ${topAlert.consecutiveFails} 次未達標 (${topAlert.pct}%)`
+      : `需要改善 (${topAlert.pct}%)`;
+
     const alertMessages = {
       inhale: {
-        bannerMsg: `⚠️【合口吸氣 · 連續 ${topAlert.consecutiveFails} 次未達標 (${topAlert.pct}%)】請閉上嘴巴，用鼻慢慢吸氣`,
+        bannerMsg: `⚠️【合口吸氣 · ${statusTag}】請閉上嘴巴，用鼻慢慢吸氣`,
         ttsMsg: '請閉上嘴巴，用鼻慢慢吸氣'
       },
       exhale: {
-        bannerMsg: `⚠️【噘唇呼氣 · 連續 ${topAlert.consecutiveFails} 次未達標 (${topAlert.pct}%)】請將嘴唇噘起成吹蠟燭狀，慢慢吹氣出嚟`,
+        bannerMsg: `⚠️【噘唇呼氣 · ${statusTag}】請將嘴唇噘起成吹蠟燭狀，慢慢吹氣出嚟`,
         ttsMsg: '請將嘴唇噘起成吹口哨狀，慢慢吹氣出嚟'
       },
       shoulder: {
-        bannerMsg: `⚠️【沉肩放鬆 · 連續 ${topAlert.consecutiveFails} 次未達標 (${topAlert.pct}%)】偵測到聳肩代償，請保持雙肩下沉放鬆`,
+        bannerMsg: `⚠️【沉肩放鬆 · ${statusTag}】偵測到聳肩代償，請保持雙肩下沉放鬆`,
         ttsMsg: '偵測到聳肩用力，請沉肩放鬆'
       }
     };

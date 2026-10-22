@@ -1,8 +1,8 @@
 /**
- * 舒呼(SootheBreath) v9.1 ES6 Module — interactive3d.js
+ * 舒呼(SootheBreath) v9.2 ES6 Module — interactive3d.js
  * 3D 互動模式（微風風車 Pinwheel & 蒲公英 Dandelion）P0–P2 高效能優化與 Three.js 資源生命週期管理模組
  *
- * v9.1 核心效能優化 (P0 – P2 Performance Optimizations):
+ * v9.2 核心效能優化 (P0 – P2 Performance Optimizations):
  * - [P0-1] 單一主迴圈整合 (Unified rAF Loop)：匯出 renderInteractive3DFrame() 由 trainingInferenceLoop 統一驅動，消除雙重 requestAnimationFrame 搶佔 Main Thread 與 WebGL Context。
  * - [P0-2] 蒲公英零動態記憶體配置物件池 (Zero-Allocation In-Place Seed Pool & Reduced Draw Calls)：
  *          - 廢除吹氣時每幀 new THREE.Group/Mesh/Sprite 之 spawnFlyingSeed()，改為全數種子原位轉換飛行狀態 (In-Place Flight State)，吸氣時原位平滑重生，實現 0 GC 停頓。

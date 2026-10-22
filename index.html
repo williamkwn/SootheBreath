@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>舒呼(SootheBreath) 呼吸復康訓練 (v9.1)</title>
+  <title>舒呼(SootheBreath) 呼吸復康訓練 (v9.2)</title>
   
   <!-- PWA Settings -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4DB6AC">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v9.1">
+  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v9.2">
   
   <!-- Tailwind CSS Play CDN v3.4 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Three.js r128 for v9.1 3D Interactive Mode (Pinwheel & Dandelion) -->
+  <!-- Three.js r128 for v9.2 3D Interactive Mode (Pinwheel & Dandelion) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     if (typeof tailwind !== 'undefined') {
@@ -42,8 +42,8 @@
     }
   </script>
   
-  <!-- Style Sheet (with v=9.1 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=9.1">
+  <!-- Style Sheet (with v=9.2 cache buster + inline critical styles) -->
+  <link rel="stylesheet" href="style.css?v=9.2">
   <style>
 :root {
   --inhale-color: #4DB6AC;
@@ -78,7 +78,7 @@ html, body {
       <div>
         <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
           舒呼(SootheBreath) 呼吸復康訓練
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v9.1</span>
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v9.2</span>
         </h1>
       </div>
     </div>
@@ -187,7 +187,7 @@ html, body {
             </div>
           </div>
 
-          <!-- Card B: 顯示模式 (含 v9.1 互動模式選擇) -->
+          <!-- Card B: 顯示模式 (含 v9.2 互動模式選擇) -->
           <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-4 flex flex-col justify-start">
             <div class="space-y-4">
               <label class="text-sm font-extrabold text-slate-800 block">顯示模式</label>
@@ -211,7 +211,7 @@ html, body {
                 </div>
               </div>
 
-              <!-- v9.1 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
+              <!-- v9.2 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
               <div id="wrapper-interactive-object" class="hidden space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80">
                 <span class="text-xs text-amber-900 font-semibold block">互動模式 3D 主題選擇 (風車 / 蒲公英)：</span>
                 <div class="flex gap-2">
@@ -422,7 +422,7 @@ html, body {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v9.1 60 FPS 高效能 3D 互動模式) -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v9.2 60 FPS 高效能 3D 互動模式) -->
     <!-- ========================================================================= -->
     <div id="state-training" class="hidden flex-1 flex flex-col overflow-hidden relative bg-[#f5fafd]">
 
@@ -506,7 +506,7 @@ html, body {
               </div>
             </div>
 
-            <!-- Mode 3 (v9.1): 60 FPS 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
+            <!-- Mode 3 (v9.2): 60 FPS 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
             <div id="interactive-3d-wrapper" class="hidden w-full flex flex-col items-center justify-center mx-auto">
               <div id="interactive-3d-stage" class="bg-pinwheel relative select-none text-slate-100">
                 <!-- Pre-baked Soft Grassland Background (for Dandelion Mode — Zero Real-Time CSS Blur) -->
@@ -727,10 +727,10 @@ html, body {
   </main>
 
   <!-- ========================================== -->
-  <!-- Bottom Version Number Remark Footer (v9.1) -->
+  <!-- Bottom Version Number Remark Footer (v9.2) -->
   <!-- ========================================== -->
   <footer id="app-version-footer" class="w-full py-1.5 px-4 text-center text-xs font-bold text-slate-500 bg-white/85 border-t border-teal-100/80 shrink-0 z-20">
-    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v9.1
+    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v9.2
   </footer>
 
   <!-- ========================================== -->
@@ -900,21 +900,21 @@ html, body {
     <span id="toast-text">操作成功</span>
   </div>
 
-  <!-- Clean old Service Worker caches & register v9.1 Service Worker -->
+  <!-- Clean old Service Worker caches & register v9.2 Service Worker -->
   <script>
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'soothebreath-v9.1.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v9.2.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=9.1')
+        navigator.serviceWorker.register('sw.js?v=9.2')
           .then(reg => {
             reg.update();
-            console.log('舒呼 SootheBreath PWA Service Worker v9.1 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v9.2 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -922,6 +922,6 @@ html, body {
   </script>
 
   <!-- Load ES6 Modular JavaScript Application Entry Point -->
-  <script type="module" src="./app.js?v=9.1"></script>
+  <script type="module" src="./app.js?v=9.2"></script>
 </body>
 </html>

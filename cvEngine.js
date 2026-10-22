@@ -1,9 +1,19 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — cvEngine.js
+ * 舒呼(SootheBreath) v9.2 ES6 Module — cvEngine.js
  * 核心電腦視覺幾何運算、臨床生物力學判定公式與免鏡頭模擬器 (Core CV Math & Clinical Algorithms)
+ *
+ * v9.2 核心修正 (Fix 1):
+ * - 收緊動作動量豁免機制 (applyActionMomentumExemption)：
+ *   1. 新增最低基礎分門檻 (MOMENTUM_MIN_BASE_SCORE = 0.35)：若使用者完全張大口或完全未噘唇 (baseScore < 0.35)，嚴禁因鏡頭微震而豁免。
+ *   2. 新增抗鏡頭噪訊死區門檻 (MOMENTUM_DELTA_LAR_THRESHOLD = -0.008, MOMENTUM_DELTA_PUCKER_THRESHOLD = 0.015)：
+ *      過濾 MediaPipe ±0.002 自然訊號抖動，僅在真實主動閉口或主動噘唇時將過渡區分數提升至 0.85。
  */
 
 import { STATES, PHASES, THRESHOLDS, clampVal, ema, AppState } from './state.js';
+
+export const MOMENTUM_MIN_BASE_SCORE = 0.35;
+export const MOMENTUM_DELTA_LAR_THRESHOLD = -0.008;
+export const MOMENTUM_DELTA_PUCKER_THRESHOLD = 0.015;
 
 // ============================================================================
 // 5. 核心電腦視覺運算公式 (Section 3 Math & Upgraded Clinical Algorithms)
@@ -128,7 +138,6 @@ export function calculateShoulderMetrics(poseLandmarks, dEye, distBase) {
  * - jawOpen_filtered = ema(jawOpen_raw, prev, 0.25)
  * - mouthPucker_filtered = ema(mouthPucker_raw, prev, 0.30)
  * - mouthFunnel_filtered = ema(mouthFunnel_raw, prev, 0.30)
- * 並以濾波後數值計算 ΔLAR 與 ΔmouthPucker 供動作動量豁免 (Action-Momentum Exemption) 使用。
  */
 export function smoothFacialSignalsEMA(rawLar, rawJawOpen, rawMouthPucker, rawMouthFunnel = 0) {
   const alphaLar = THRESHOLDS.emaLarAlpha || 0.25;
@@ -230,18 +239,22 @@ export function getExhaleScore(larFiltered, mouthPuckerFiltered, mouthFunnelFilt
 }
 
 /**
- * 【C.5 動作動量豁免機制 (Action-Momentum Exemption — Δ Trend Check)】
- * 當病人絕對分數 < 1.0 時，根據 EMA 濾波後之肌肉移動方向判斷其正確動作意圖：
- * - 吸氣 (INHALE)：若嘴巴正主動閉合 (ΔLAR < 0)，豁免並將該幀分數提升為 1.0
- * - 呼氣 (EXHALE)：若嘴唇正主動噘起 (ΔmouthPucker > 0)，豁免並將該幀分數提升為 1.0
+ * 【v9.2 Fix 1：抗抖動動作動量豁免機制 (Noise-Resistant Action-Momentum Exemption)】
+ * 當病人基礎分數處於臨界過渡區 (0.35 <= baseScore < 1.0) 時，根據超越鏡頭噪訊死區之肌肉移動速度判斷正確動作意圖：
+ * - 若 baseScore < 0.35（例如吸氣張大口或呼氣完全未噘唇），嚴禁豁免，直接返回原始低分，杜絕鏡頭微震誤判滿分。
+ * - 吸氣 (INHALE)：當 baseScore >= 0.35 且嘴巴正明顯主動閉合 (deltaLar < -0.008)，提升至 0.85。
+ * - 呼氣 (EXHALE)：當 baseScore >= 0.35 且嘴唇正明顯主動噘起 (deltaMouthPucker > +0.015)，提升至 0.85。
  */
 export function applyActionMomentumExemption(phase, baseScore, deltaLar, deltaMouthPucker) {
   if (baseScore >= 1.0) return 1.0;
-  if (phase === PHASES.INHALE && deltaLar < 0) {
-    return 1.0;
+  if (baseScore < MOMENTUM_MIN_BASE_SCORE) {
+    return clampVal(baseScore, 0, 1);
   }
-  if (phase === PHASES.EXHALE && deltaMouthPucker > 0) {
-    return 1.0;
+  if (phase === PHASES.INHALE && deltaLar < MOMENTUM_DELTA_LAR_THRESHOLD) {
+    return Math.max(baseScore, 0.85);
+  }
+  if (phase === PHASES.EXHALE && deltaMouthPucker > MOMENTUM_DELTA_PUCKER_THRESHOLD) {
+    return Math.max(baseScore, 0.85);
   }
   return clampVal(baseScore, 0, 1);
 }
@@ -272,21 +285,18 @@ export function generateSimulatedDetections(now) {
   if (AppState.currentState === STATES.CALIBRATING) {
     const step = AppState.calibration.currentStep;
     if (step === 1) {
-      // 第 1 步【閉嘴】
       lar = 0.034 + Math.abs(wave) * 0.004;
       jawOpen = 0.014 + Math.abs(wave) * 0.003;
       pucker = 0.08;
       funnel = 0.06;
       shoulderY = 0.72;
     } else if (step === 2) {
-      // 第 2 步【張大口】
       lar = 0.36 + wave * 0.015;
       jawOpen = 0.42 + wave * 0.02;
       pucker = 0.05;
       funnel = 0.12;
       shoulderY = 0.72;
     } else if (step === 3) {
-      // 第 3 步【噘唇】
       lar = 0.12 + wave * 0.01;
       jawOpen = 0.06;
       pucker = 0.54 + wave * 0.03;
@@ -294,12 +304,10 @@ export function generateSimulatedDetections(now) {
       lipWidthHalf = 0.038;
       shoulderY = 0.72;
     } else if (step === 4) {
-      // 第 4 步【縮膊頭】（雙肩向上縮起，耳肩距離縮短至 ~0.24）
       lar = 0.036;
       jawOpen = 0.015;
       shoulderY = 0.658 + wave * 0.003;
     } else {
-      // 第 5 步【放鬆膊頭】（雙肩完全下沉放鬆，耳肩距離 ~0.30）
       lar = 0.035;
       jawOpen = 0.015;
       shoulderY = 0.72 + wave * 0.002;
@@ -321,7 +329,6 @@ export function generateSimulatedDetections(now) {
   for (let i = 0; i < 468; i++) {
     face.push({ x: 0.5, y: 0.42, z: 0 });
   }
-  // D_eye = hypot(0.59 - 0.41, 0) = 0.18 -> let's set 0.39 and 0.61 so D_eye = 0.22
   face[33] = { x: 0.39, y: 0.36 };
   face[263] = { x: 0.61, y: 0.36 };
   face[78] = { x: 0.50 - lipWidthHalf, y: 0.49 };
@@ -363,4 +370,3 @@ export function generateSimulatedDetections(now) {
     }
   };
 }
-
