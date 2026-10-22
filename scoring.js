@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v9.2 ES6 Module — scoring.js
+ * 舒呼(SootheBreath) v9.3 ES6 Module — scoring.js
  * 全程累計時間百分比運算、階段結束評估 (Phase-End Evaluation) 與連續失敗/實時錯誤警示排程引擎
  *
  * v9.2 核心修正 (Fix 3):

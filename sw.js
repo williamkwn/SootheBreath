@@ -1,9 +1,9 @@
 /**
  * 舒呼 (SootheBreath) — PWA Service Worker (sw.js)
- * Version: v9.2.0 (ES6 14-Module Architecture with P0–P2 60 FPS Optimized 3D Interactive Mode)
+ * Version: v9.3.0 (ES6 14-Module Architecture with P0–P2 60 FPS Optimized 3D Interactive Mode)
  */
 
-const CACHE_NAME = 'soothebreath-v9.2.0';
+const CACHE_NAME = 'soothebreath-v9.3.0';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -34,7 +34,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(APP_SHELL_ASSETS).catch((err) => {
-        console.warn('[SW v9.2] Partial cache warning:', err);
+        console.warn('[SW v9.3] Partial cache warning:', err);
       });
     })
   );
