@@ -1,8 +1,8 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9.3)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9.4)
  * ESM Core Engine: MediaPipe Tasks Vision 0.10.14 + Three.js 3D Interactive Mode (60 FPS Optimized)
  *
- * v9.3 整合與修復重點：
+ * v9.4 整合與修復重點：
  * - 完整保留 v8_ES / v9 / v9.1 穩定版之 CALIB_STEPS_CONFIG (0-indexed Array)、DEFAULT_CALIB_BASELINES (含 LAR_plb / mouthPucker_plb / mouthFunnel_plb)
  *   及 DEFAULT_THRESHOLDS 結構，徹底修復 v9.2 無法進入五步校準流程之問題。
  * - 完整保留 v9.2 Fix 1 至 Fix 4 精準評分、三層橫幅警示與 3D 互動模式實時吹風觸發/中途即刻斷開常數與狀態欄位。
@@ -137,7 +137,7 @@ export const HUMAN_IMAGES = {
   }
 };
 
-// 訓練開局緩衝期、門檻、v9.1 效能節流常數與 v9.2/v9.3 互動吹風/實時警示常數
+// 訓練開局緩衝期、門檻、v9.1 效能節流常數與 v9.2/v9.4 互動吹風/實時警示常數
 export const ROLLING_WINDOW_SECONDS = 20.0;
 export const INITIAL_GRACE_SECONDS = 10.0;       // 前 10 秒開局緩衝期
 export const PHASE_ENTRY_GRACE_MS = 400;         // 吸呼雙向階段切換前 400ms 生理反應緩衝期

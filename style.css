@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v9.3 Gentle Soothing Clinical UI Stylesheet (P0–P2 60 FPS 高效能 3D 互動模式優化版)
+   v9.4 Gentle Soothing Clinical UI Stylesheet (P0–P2 60 FPS 高效能 3D 互動模式優化版)
    ========================================================================== */
 
 :root {
@@ -286,7 +286,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* ==========================================================================
-   v9.3 3D Interactive Mode Styles (P1-1: Zero Real-Time CSS Blur Over WebGL)
+   v9.4 3D Interactive Mode Styles (P1-1: Zero Real-Time CSS Blur Over WebGL)
    ========================================================================== */
 #interactive-3d-stage {
   position: relative;

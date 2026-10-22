@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9.3 ES6 Modular Edition)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9.4 ES6 Modular Edition)
  * Main Entry Point (app.js)
  *
  * 模組化架構 (ES6 Modules Architecture - 14 Modules):

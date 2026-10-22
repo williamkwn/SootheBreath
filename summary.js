@@ -68,7 +68,7 @@ export function exportDeidentifiedCSV() {
   const shoulderAcc = train.totalShoulderFrames > 0 ? Math.round((train.validShoulderFrames / train.totalShoulderFrames) * 100) : 96;
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v9.3) — 匿名臨床數據報表 ===\n";
+  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v9.4) — 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;

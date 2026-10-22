@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v9.3 ES6 Module — feedback.js
+ * 舒呼(SootheBreath) v9.4 ES6 Module — feedback.js
  * 三層優先警示排程 (Alert Schedule / 實時錯誤 / <80% 卡片對齊) 與底部橫幅/語音回饋引擎
  */
 

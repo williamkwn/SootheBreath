@@ -1,25 +1,25 @@
 /**
  * 舒呼 (SootheBreath) — PWA Service Worker (sw.js)
- * Version: v9.3.0 (ES6 14-Module Architecture with P0–P2 60 FPS Optimized 3D Interactive Mode)
+ * Version: v9.4.0 (ES6 14-Module Architecture with P0–P2 60 FPS Optimized 3D Interactive Mode)
  */
 
-const CACHE_NAME = 'soothebreath-v9.3.0';
+const CACHE_NAME = 'soothebreath-v9.4.0';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
-  './style.css?v=9.2',
-  './app.js?v=9.2',
+  './style.css?v=9.4',
+  './app.js?v=9.4',
   './state.js',
   './dom.js',
   './vision.js',
   './camera.js',
   './cvEngine.js',
-  './scoring.js',
   './tts.js',
   './feedback.js',
+  './scoring.js',
   './calibration.js',
-  './interactive3d.js',
   './training.js',
+  './interactive3d.js',
   './summary.js',
   './uiControls.js',
   './manifest.json',
@@ -34,7 +34,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(APP_SHELL_ASSETS).catch((err) => {
-        console.warn('[SW v9.3] Partial cache warning:', err);
+        console.warn('[SW v9.4] Partial cache warning:', err);
       });
     })
   );
@@ -42,33 +42,34 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((name) => {
+          if (name !== CACHE_NAME) {
+            return caches.delete(name);
           }
         })
-      )
-    ).then(() => self.clients.claim())
+      );
+    }).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  const url = new URL(event.request.url);
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      fetch(event.request)
-        .then((networkResp) => {
-          if (networkResp && networkResp.status === 200) {
-            const copy = networkResp.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return networkResp;
-        })
-        .catch(() => caches.match(event.request))
-    );
-  }
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return networkResponse;
+      }).catch(() => cachedResponse);
+
+      return cachedResponse || fetchPromise;
+    })
+  );
 });

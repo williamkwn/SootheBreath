@@ -1,15 +1,22 @@
 /**
- * 舒呼(SootheBreath) v9.3 ES6 Module — training.js
- * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論、DOM Dirty-Check 節流與精準吹風觸發/中斷引擎
+ * 舒呼(SootheBreath) v9.4 ES6 Module — training.js
+ * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論與 DOM Dirty-Check 節流引擎
  *
- * v9.3 修復與整合重點：
- * - 完整保留 v8_ES / v9 / v9.1 之相機串流綁定 (dom.trainVideo.srcObject = AppState.stream)、視窗 resize 同步、
- *   cyclesHistory 結構與隱私模式樣式切換，徹底解決真實鏡頭訓練黑屏與第 1 週期結束崩潰問題。
+ * v9.1 效能優化重點 (P0-1 & P1-2) 100% 完整保留：
+ * - [P0-1] 單一主迴圈 + MediaPipe 推論降頻與單雙幀交錯：
+ *          - 統一於 trainingInferenceLoop 結尾呼叫 renderInteractive3DFrame(dt)，消除雙重 requestAnimationFrame 互搶資源。
+ *          - 設定 INFERENCE_INTERVAL_MS = 50 (20 FPS)，並於互動模式下單雙次推論交錯執行 FaceLandmarker 與 PoseLandmarker，主執行緒負載降低 >65%。
+ * - [P1-2] DOM 更新節流 (UI_THROTTLE_MS = 120) 與隱藏元件跳過 (Eliminate Layout Thrashing)：
+ *          - 互動模式下自動跳過已隱藏之 #pacer-ball 與 #human-demo-box 樣式更新。
+ *          - 四張百分比指示卡、倒數計時器與提示文字採用 Dirty-Check + 120ms 節流更新。
+ *          - 調試面板 (updateDebugReadouts) 僅於面板展開時每 150ms 更新一次。
+ *
+ * v9.2 / v9.4 臨床計分與互動吹風精準化強化 (Fix 1 – Fix 4)：
  * - [Fix 2] 3D 互動模式實時吹風觸發與中途即刻斷開邏輯 (Real-Time Hold & Release)：
- *           1. rawInhaleMotionScore 與 rawExhaleMotionScore 直接取自未經動量豁免之 getInhaleScore() 與 getExhaleScore()。
- *           2. 吸氣階段需同時達成「合口時間比例 >= 70%」且「無聳肩時間比例 >= 70%」才取得吹氣資格 (inhaleQualifiedForBlow = true)。
- *           3. 呼氣階段需連續 >= 0.10s (EXHALE_BLOW_CONFIRM_SEC) 維持真實噘唇且無聳肩才觸發 startInteractiveBlowing()；
- *              一旦呼氣中途張大口、放開噘唇或聳肩連續 >= 0.20s (EXHALE_BLOW_CUTOFF_SEC)，即刻呼叫 stopInteractiveBlowing() 停止吹風。
+ *          - rawInhaleMotionScore 與 rawExhaleMotionScore 直接取自未經動量豁免之 getInhaleScore() 與 getExhaleScore()。
+ *          - 吸氣階段需同時達成「合口時間比例 >= 70%」且「無聳肩時間比例 >= 70%」才取得吹氣資格 (inhaleQualifiedForBlow = true)。
+ *          - 呼氣階段需連續 >= 0.10s (EXHALE_BLOW_CONFIRM_SEC) 維持真實噘唇且無聳肩才觸發 startInteractiveBlowing()；
+ *            一旦呼氣中途張大口、放開噘唇或聳肩連續 >= 0.20s (EXHALE_BLOW_CUTOFF_SEC)，即刻呼叫 stopInteractiveBlowing() 停止吹風。
  * - [Fix 3] 開頭 400ms 緩衝期標記傳入 accumulateFrameScore，避免緩衝期稀釋錯誤時間比例；收緊呼氣 70% 柔性過渡條件。
  * - [Fix 4] 單雙幀交錯推論 EMA 保護：僅在 faceUpdated 為 true 時更新面部 EMA 與斜率，僅在 poseUpdated 為 true 時更新雙肩 EMA。
  */
@@ -45,32 +52,29 @@ import {
   isPlbExhaleValid,
   generateSimulatedDetections
 } from './cvEngine.js';
+import { speakText } from './tts.js';
 import {
   resetScoringState,
   accumulateFrameScore,
-  evaluateCompletedPhase
+  evaluateCompletedPhase,
+  getHighestPriorityAlert
 } from './scoring.js';
-import { speakText } from './tts.js';
-import {
-  SUCCESS_BANNER_TEXT,
-  evaluateStickyPriorityFeedback,
-  renderBottomBanner
-} from './feedback.js';
-import { updateDebugReadouts } from './uiControls.js';
+import { evaluateStickyPriorityFeedback } from './feedback.js';
 import {
   initInteractive3D,
   disposeInteractive3D,
-  renderInteractive3DFrame,
+  switchInteractiveObjectMode,
   startInteractiveBlowing,
   stopInteractiveBlowing,
-  switchInteractiveObjectMode
+  renderInteractive3DFrame
 } from './interactive3d.js';
+import { switchViewState, updateDebugReadouts } from './uiControls.js';
 
-// P1-2: 模組內部 DOM 節流與快取狀態，避免每幀重複寫入相同字串觸發 Layout Thrashing
+// Dirty-check cache to prevent redundant DOM reflows/repaints
 const domCache = {
-  timerText: '',
+  timerLeft: '',
+  cycleCount: -1,
   phaseHint: '',
-  rrSubtitle: '',
   lastUiUpdateTs: 0,
   lastDebugUpdateTs: 0
 };
@@ -95,7 +99,6 @@ export async function runTrainingSequence() {
   AppState.training.cycleStartTime = now;
   AppState.ema.initialized = false;
   AppState.ema.faceInitialized = false;
-
   AppState.training.elapsedSeconds = 0;
   AppState.training.currentPhase = PHASES.INHALE;
   AppState.training.cycleIndex = 1;
@@ -105,7 +108,6 @@ export async function runTrainingSequence() {
   AppState.training.exhaleGraceCycleTriggered = -1;
   AppState.training.exhaleEntryTimestamp = 0;
   AppState.training.exhaleGraceCompleted = false;
-
   AppState.training.isSoftTransitioning = false;
   AppState.training.softTransitionStartTime = 0;
   AppState.training.cyclesHistory = [];
@@ -121,21 +123,24 @@ export async function runTrainingSequence() {
   AppState.training.avgRR = targetRR;
   AppState.training.isWarmingUp = true;
 
+  domCache.timerLeft = '';
+  domCache.cycleCount = -1;
+  domCache.phaseHint = '';
+  domCache.lastUiUpdateTs = 0;
+  domCache.lastDebugUpdateTs = 0;
+
   resetScoringState();
 
   AppState.feedback.latchedModule = null;
   AppState.feedback.currentPriority = 5;
-  AppState.feedback.currentPMessage = SUCCESS_BANNER_TEXT;
+  AppState.feedback.currentPMessage = '';
   AppState.feedback.pendingMessage = '';
-
-  domCache.timerText = '';
-  domCache.phaseHint = '';
-  domCache.rrSubtitle = '';
-  domCache.lastUiUpdateTs = 0;
-  domCache.lastDebugUpdateTs = 0;
-
   if (dom.bottomBanner) {
     dom.bottomBanner.classList.add('hidden');
+  }
+
+  if (dom.btnPauseTrain) {
+    dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
   applyPrivacyModeStyles();
@@ -152,12 +157,10 @@ export async function runTrainingSequence() {
 }
 
 export function syncCanvasDimensions() {
-  const rect = dom.trainVideo.getBoundingClientRect();
-  if (rect.width > 0 && rect.height > 0) {
-    if (dom.trainCanvas.width !== Math.round(rect.width) || dom.trainCanvas.height !== Math.round(rect.height)) {
-      dom.trainCanvas.width = Math.round(rect.width);
-      dom.trainCanvas.height = Math.round(rect.height);
-    }
+  const mode = AppState.privacyMode;
+  if (dom.visionContainer && dom.trainCanvas && mode !== 'minimalist' && mode !== 'interactive') {
+    dom.trainCanvas.width = dom.visionContainer.clientWidth || 640;
+    dom.trainCanvas.height = dom.visionContainer.clientHeight || 480;
   }
 }
 
@@ -169,46 +172,53 @@ export function applyPrivacyModeStyles() {
 
   const activeCls = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-sm transition cursor-pointer";
   const inactiveCls = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
-
   if (dom.btnModeMirror) dom.btnModeMirror.className = mode === 'mirror' ? activeCls : inactiveCls;
   if (dom.btnModeMesh) dom.btnModeMesh.className = mode === 'privacy_mesh' ? activeCls : inactiveCls;
   if (dom.btnModeMinimal) dom.btnModeMinimal.className = mode === 'minimalist' ? activeCls : inactiveCls;
   if (dom.btnModeInteractive) dom.btnModeInteractive.className = mode === 'interactive' ? activeCls : inactiveCls;
 
-  const isSingleColumnLayout = (mode === 'minimalist' || mode === 'interactive');
-  const isPureGuiding = (mode === 'minimalist');
+  const isSingleColumnGuideLayout = (mode === 'minimalist' || mode === 'interactive');
 
-  if (dom.pacerVisualRegion) {
-    dom.pacerVisualRegion.classList.toggle('pure-guiding-region', isPureGuiding);
-  }
-  if (dom.pacerOuterRing) {
-    dom.pacerOuterRing.classList.toggle('pure-guiding-ring', isPureGuiding);
-  }
-  if (dom.pacerBall) {
-    dom.pacerBall.classList.toggle('pure-guiding-ball', isPureGuiding);
-  }
-  if (dom.humanDemoBox) {
-    dom.humanDemoBox.classList.toggle('pure-guiding-human', isPureGuiding);
-  }
-
-  if (isSingleColumnLayout) {
-    if (dom.videoColumn) dom.videoColumn.classList.add('hidden');
-    if (dom.trainingGrid) {
-      dom.trainingGrid.className = "flex-1 grid grid-cols-1 gap-3 p-3 md:p-4 overflow-y-auto items-center justify-items-center bg-gradient-to-b from-[#f5fafd] to-teal-50/30";
+  if (isSingleColumnGuideLayout) {
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-px h-px opacity-0 pointer-events-none fixed -left-[9999px] overflow-hidden";
     }
-    if (dom.pacerColumn) {
-      dom.pacerColumn.className = "w-full max-w-4xl flex flex-col justify-between bg-white/95 backdrop-blur-md border border-teal-200/80 rounded-3xl p-4 md:p-6 shadow-xl space-y-3 mx-auto my-auto";
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full flex-1 h-full bg-[#f5fafd] flex flex-col items-center justify-between p-4 md:p-6 overflow-y-auto pure-guiding-mode";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-2 relative min-h-[44vh] w-full max-w-3xl mx-auto text-center";
+    }
+    if (dom.pacerOuterRing) {
+      dom.pacerOuterRing.classList.add('pure-guiding-ring');
+    }
+    if (dom.pacerBall) {
+      dom.pacerBall.classList.add('pure-guiding-ball');
+    }
+    if (dom.humanDemoBox) {
+      dom.humanDemoBox.classList.add('pure-guiding-human');
     }
     if (dom.biofeedbackCardsGrid) {
-      dom.biofeedbackCardsGrid.className = "w-full grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1";
+      dom.biofeedbackCardsGrid.className = "w-full max-w-3xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-3";
     }
   } else {
-    if (dom.videoColumn) dom.videoColumn.classList.remove('hidden');
-    if (dom.trainingGrid) {
-      dom.trainingGrid.className = "flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 p-3 md:p-4 overflow-y-auto md:overflow-hidden items-stretch";
+    if (dom.visionContainer) {
+      dom.visionContainer.className = "w-full md:w-[60%] h-[42vh] md:h-full relative bg-slate-900 flex items-center justify-center border-b md:border-b-0 md:border-r border-teal-100 overflow-hidden shrink-0";
     }
-    if (dom.pacerColumn) {
-      dom.pacerColumn.className = "md:col-span-5 flex flex-col justify-between bg-white/90 backdrop-blur-md border border-teal-100/90 rounded-3xl p-4 md:p-5 shadow-md space-y-3";
+    if (dom.guidancePanel) {
+      dom.guidancePanel.className = "w-full md:w-[40%] h-[58vh] md:h-full bg-white/90 backdrop-blur-md flex flex-col items-center justify-between p-4 md:p-5 overflow-y-auto space-y-3";
+    }
+    if (dom.pacerVisualArea) {
+      dom.pacerVisualArea.className = "flex-1 flex flex-col items-center justify-center py-2 relative min-h-[195px] w-full text-center";
+    }
+    if (dom.pacerOuterRing) {
+      dom.pacerOuterRing.classList.remove('pure-guiding-ring');
+    }
+    if (dom.pacerBall) {
+      dom.pacerBall.classList.remove('pure-guiding-ball');
+    }
+    if (dom.humanDemoBox) {
+      dom.humanDemoBox.classList.remove('pure-guiding-human');
     }
     if (dom.biofeedbackCardsGrid) {
       dom.biofeedbackCardsGrid.className = "w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2.5";
@@ -232,37 +242,37 @@ export function applyPrivacyModeStyles() {
 }
 
 export function applyDisplayModeStyles() {
-  const dMode = AppState.displayMode;
+  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const isHuman = (!isInteractive && AppState.displayMode === 'human');
+  const isBalloon = (!isInteractive && !isHuman);
   const gender = AppState.humanGender;
-  const iObj = AppState.interactiveObject || 'pinwheel';
+  const interObj = AppState.interactiveObject || 'pinwheel';
 
-  const activeMain = "py-2.5 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer flex items-center justify-center gap-1.5";
-  const inactiveMain = "py-2.5 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer flex items-center justify-center gap-1.5";
+  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
 
-  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = dMode === 'balloon' ? activeMain : inactiveMain;
-  if (dom.btnPacerHuman) dom.btnPacerHuman.className = dMode === 'human' ? activeMain : inactiveMain;
-  if (dom.btnPacerInteractive) dom.btnPacerInteractive.className = dMode === 'interactive' ? activeMain : inactiveMain;
+  if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = isBalloon ? idleActive : idleInactive;
+  if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
+  if (dom.btnPacerInteractive) dom.btnPacerInteractive.className = isInteractive ? idleActive : idleInactive;
 
-  if (dom.humanGenderSelector) {
-    dom.humanGenderSelector.classList.toggle('hidden', dMode !== 'human');
+  if (dom.wrapperHumanGender) {
+    dom.wrapperHumanGender.classList.toggle('hidden', !isHuman);
   }
-  if (dom.interactiveObjectSelector) {
-    dom.interactiveObjectSelector.classList.toggle('hidden', dMode !== 'interactive');
+  if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? idleActive : idleInactive;
+  if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? idleActive : idleInactive;
+
+  if (dom.wrapperInteractiveObject) {
+    dom.wrapperInteractiveObject.classList.toggle('hidden', !isInteractive);
   }
+  if (dom.btnInteractivePinwheel) dom.btnInteractivePinwheel.className = interObj === 'pinwheel' ? idleActive : idleInactive;
+  if (dom.btnInteractiveDandelion) dom.btnInteractiveDandelion.className = interObj === 'dandelion' ? idleActive : idleInactive;
 
-  const activeSub = "flex-1 py-1.5 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-xs transition cursor-pointer";
-  const inactiveSub = "flex-1 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
-  if (dom.btnGenderMale) dom.btnGenderMale.className = gender === 'male' ? activeSub : inactiveSub;
-  if (dom.btnGenderFemale) dom.btnGenderFemale.className = gender === 'female' ? activeSub : inactiveSub;
-  if (dom.btnInteractivePinwheel) dom.btnInteractivePinwheel.className = iObj === 'pinwheel' ? activeSub : inactiveSub;
-  if (dom.btnInteractiveDandelion) dom.btnInteractiveDandelion.className = iObj === 'dandelion' ? activeSub : inactiveSub;
-
-  const tActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-xs transition cursor-pointer";
-  const tInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
-  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = dMode === 'balloon' ? tActive : tInactive;
-  if (dom.btnTrainMale) dom.btnTrainMale.className = (dMode === 'human' && gender === 'male') ? tActive : tInactive;
-  if (dom.btnTrainFemale) dom.btnTrainFemale.className = (dMode === 'human' && gender === 'female') ? tActive : tInactive;
-  if (dom.btnTrainInteractive) dom.btnTrainInteractive.className = dMode === 'interactive' ? tActive : tInactive;
+  const trainActive = "px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const trainInactive = "px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer";
+  if (dom.btnTrainBalloon) dom.btnTrainBalloon.className = isBalloon ? trainActive : trainInactive;
+  if (dom.btnTrainMale) dom.btnTrainMale.className = (isHuman && gender === 'male') ? trainActive : trainInactive;
+  if (dom.btnTrainFemale) dom.btnTrainFemale.className = (isHuman && gender === 'female') ? trainActive : trainInactive;
+  if (dom.btnTrainInteractive) dom.btnTrainInteractive.className = isInteractive ? trainActive : trainInactive;
 
   const imgPair = HUMAN_IMAGES[gender] || HUMAN_IMAGES.male;
   if (dom.imgHumanInhale && dom.imgHumanInhale.getAttribute('src') !== imgPair.inhale) {
@@ -273,34 +283,31 @@ export function applyDisplayModeStyles() {
   }
 
   if (dom.pacerOuterRing) {
-    dom.pacerOuterRing.classList.toggle('hidden', dMode !== 'balloon');
+    dom.pacerOuterRing.classList.toggle('hidden', !isBalloon);
   }
-  if (dom.humanDemoBox) {
-    dom.humanDemoBox.classList.toggle('hidden', dMode !== 'human');
+  if (dom.humanDemoWrapper) {
+    dom.humanDemoWrapper.classList.toggle('hidden', !isHuman);
   }
   if (dom.interactive3dWrapper) {
-    dom.interactive3dWrapper.classList.toggle('hidden', dMode !== 'interactive');
+    dom.interactive3dWrapper.classList.toggle('hidden', !isInteractive);
   }
 
-  if (dMode === 'interactive') {
+  if (isInteractive) {
     if (AppState.currentState === STATES.TRAINING) {
-      initInteractive3D(iObj);
-      switchInteractiveObjectMode(iObj);
+      initInteractive3D(interObj);
+      switchInteractiveObjectMode(interObj);
     }
   } else {
     disposeInteractive3D();
   }
 
-  if (dom.labelActiveDisplayMode) {
-    if (dMode === 'balloon') {
-      dom.labelActiveDisplayMode.textContent = "🎈 氣球動畫導引";
-    } else if (dMode === 'human') {
-      dom.labelActiveDisplayMode.textContent = gender === 'female' ? "👩 真人呼吸示範 (女性)" : "👨 真人呼吸示範 (男性)";
-    } else {
-      dom.labelActiveDisplayMode.textContent = iObj === 'dandelion'
-        ? "🌼 互動模式 · 蒲公英 (動作感測吹風)"
-        : "🎡 互動模式 · 微風風車 (動作感測吹風)";
-    }
+  const isInhale = AppState.training.currentPhase === PHASES.INHALE;
+  if (dom.imgHumanInhale && dom.imgHumanExhale) {
+    dom.imgHumanInhale.classList.toggle('active-img', isInhale);
+    dom.imgHumanExhale.classList.toggle('active-img', !isInhale);
+  }
+  if (dom.humanDemoBox) {
+    dom.humanDemoBox.classList.toggle('exhale-border', !isInhale);
   }
 }
 
@@ -326,16 +333,19 @@ export function trainingInferenceLoop() {
   const remainingTotal = Math.max(0, AppState.totalDuration - elapsedTotal);
   const mins = Math.floor(remainingTotal / 60);
   const secs = Math.floor(remainingTotal % 60);
-  const nextTimerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-
-  if (domCache.timerText !== nextTimerText) {
-    domCache.timerText = nextTimerText;
-    dom.timerDisplay.textContent = nextTimerText;
+  const timerStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  if (timerStr !== domCache.timerLeft) {
+    domCache.timerLeft = timerStr;
+    if (dom.valTimerLeft) dom.valTimerLeft.textContent = timerStr;
+  }
+  if (train.cycleIndex !== domCache.cycleCount) {
+    domCache.cycleCount = train.cycleIndex;
+    if (dom.valCycleCount) dom.valCycleCount.textContent = train.cycleIndex;
   }
 
   if (remainingTotal <= 0) {
-    finalizeCurrentCycle(now, false);
-    import('./uiControls.js').then(m => m.switchViewState(STATES.SUMMARY));
+    finalizeCurrentCycle(now, train.isSoftTransitioning);
+    switchViewState(STATES.SUMMARY);
     return;
   }
 
@@ -346,7 +356,7 @@ export function trainingInferenceLoop() {
   if (shouldRunInference) {
     const inferenceDt = train.lastInferenceTime > 0
       ? Math.min(0.25, Math.max(0.001, (now - train.lastInferenceTime) / 1000))
-      : (INFERENCE_INTERVAL_MS / 1000);
+      : dt;
     train.lastInferenceTime = now;
     train.inferenceTickCount = (train.inferenceTickCount || 0) + 1;
 
@@ -437,16 +447,16 @@ export function updateLiveRespiratoryRate(now) {
   }
 
   train.avgRR = liveAvgRR;
-
-  const nextSubtitle = `目標 ${targetRR} · 實測 ${liveAvgRR.toFixed(1)} 次/分`;
-  if (dom.subRrTarget && domCache.rrSubtitle !== nextSubtitle) {
-    domCache.rrSubtitle = nextSubtitle;
-    dom.subRrTarget.textContent = nextSubtitle;
+  if (dom.valLiveRr) {
+    const nextRr = liveAvgRR.toFixed(1);
+    if (dom.valLiveRr.textContent !== nextRr) {
+      dom.valLiveRr.textContent = nextRr;
+    }
   }
 }
 
 // ----------------------------------------------------------------------------
-// 逐幀特徵點運算、全程累計時間百分比與 v9.2/v9.3 互動模式實時吹風觸發/中斷邏輯
+// 逐幀特徵點運算、全程累計時間百分比與 v9.2/v9.4 互動模式實時吹風觸發/中斷邏輯
 // ----------------------------------------------------------------------------
 export function processFrameDetections(
   faceResult,
@@ -846,63 +856,62 @@ export function applyModuleCardStyle(cardEl, stateEl, pctEl, pctVal, isLatchedTa
     pctEl.textContent = nextPctText;
   }
 
-  let nextCardCls = '';
-  let nextPctCls = '';
-  let nextStateText = '';
-  let nextStateCls = '';
-
-  if (clamped >= PASSING_SCORE_PCT && !inAlertSchedule) {
-    nextCardCls = "bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3 flex flex-col justify-between transition-all shadow-xs";
-    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-[#2E7D32] tracking-tight";
+  let nextStateText, nextStateCls, nextPctCls, nextCardCls;
+  if (!inAlertSchedule && clamped >= PASSING_SCORE_PCT) {
     nextStateText = "合格達標";
-    nextStateCls = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-[#2E7D32] border border-emerald-300";
+    nextStateCls = "text-xs md:text-sm font-extrabold text-[#2E7D32]";
+    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-[#2E7D32]";
+    nextCardCls = "p-3.5 rounded-2xl bg-emerald-50/85 border border-emerald-200 flex items-center justify-between transition-all shadow-sm";
   } else {
-    const highlightCls = isLatchedTarget ? " shoulder-alert-active ring-2 ring-rose-400" : "";
-    nextCardCls = `bg-rose-50/95 border border-rose-300 rounded-2xl p-3 flex flex-col justify-between transition-all shadow-xs${highlightCls}`;
-    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-rose-600 tracking-tight";
-    nextStateText = "需要改善";
-    nextStateCls = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-300";
+    nextStateText = isLatchedTarget ? "需要改善 (優先修正)" : "需要改善";
+    nextStateCls = "text-xs md:text-sm font-extrabold text-rose-600";
+    nextPctCls = "text-2xl md:text-3xl font-black font-mono text-rose-600";
+    const pulseCls = isLatchedTarget ? " shoulder-alert-active" : "";
+    nextCardCls = `p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 flex items-center justify-between transition-all shadow-sm${pulseCls}`;
   }
 
-  if (cardEl.className !== nextCardCls) cardEl.className = nextCardCls;
-  if (pctEl.className !== nextPctCls) pctEl.className = nextPctCls;
   if (stateEl.textContent !== nextStateText) stateEl.textContent = nextStateText;
   if (stateEl.className !== nextStateCls) stateEl.className = nextStateCls;
+  if (pctEl.className !== nextPctCls) pctEl.className = nextPctCls;
+  if (cardEl.className !== nextCardCls) cardEl.className = nextCardCls;
 }
 
 export function renderIndicatorCards() {
   const train = AppState.training;
-  const latched = AppState.feedback.latchedModule;
+  const topAlert = (!train.isWarmingUp && train.elapsedSeconds >= INITIAL_GRACE_SECONDS)
+    ? getHighestPriorityAlert()
+    : null;
+  const latched = topAlert ? topAlert.key : null;
   const sched = train.alertSchedule || {};
 
   applyModuleCardStyle(
     dom.cardInhale,
-    dom.stateInhale,
-    dom.pctInhale,
+    dom.textInhaleState,
+    dom.badgeInhalePct,
     train.pctInhale,
     latched === 'inhale',
     !!(sched.inhale && sched.inhale.inAlertSchedule)
   );
   applyModuleCardStyle(
     dom.cardExhale,
-    dom.stateExhale,
-    dom.pctExhale,
+    dom.textExhaleState,
+    dom.badgeExhalePct,
     train.pctExhale,
     latched === 'exhale',
     !!(sched.exhale && sched.exhale.inAlertSchedule)
   );
   applyModuleCardStyle(
     dom.cardShoulder,
-    dom.stateShoulder,
-    dom.pctShoulder,
+    dom.textShoulderState,
+    dom.badgeShoulderPct,
     train.pctShoulder,
     latched === 'shoulder',
     !!(sched.shoulder && sched.shoulder.inAlertSchedule)
   );
   applyModuleCardStyle(
     dom.cardRr,
-    dom.stateRr,
-    dom.pctRr,
+    dom.textRrState,
+    dom.badgeRrPct,
     train.pctRr,
     false,
     false
@@ -914,10 +923,13 @@ export function renderIndicatorCards() {
 // ----------------------------------------------------------------------------
 export function renderTrainingCanvas(faceResults, poseResults) {
   const canvas = dom.trainCanvas;
+  if (!canvas) return;
+  const mode = AppState.privacyMode;
+  if (mode === 'minimalist' || mode === 'interactive') return;
+
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
-  const mode = AppState.privacyMode;
   const m = AppState.currentMetrics;
 
   ctx.clearRect(0, 0, w, h);
@@ -925,17 +937,9 @@ export function renderTrainingCanvas(faceResults, poseResults) {
   if (mode === 'privacy_mesh' || AppState.isDemoMode) {
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, w, h);
-
-    ctx.strokeStyle = 'rgba(77, 182, 172, 0.08)';
-    ctx.lineWidth = 1;
-    const step = 36;
-    for (let x = 0; x < w; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-    }
-    for (let y = 0; y < h; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }
   }
+
+  if (!m.hasFace && !m.hasPose) return;
 
   if (m.hasPose && poseResults && poseResults.landmarks && poseResults.landmarks.length > 0) {
     const pose = poseResults.landmarks[0];
@@ -1027,13 +1031,6 @@ export function renderTrainingCanvas(faceResults, poseResults) {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-
-    ctx.fillStyle = '#ffffff';
-    lipPoints.forEach(pt => {
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-    });
     ctx.restore();
   }
 }
