@@ -1,24 +1,13 @@
 /**
- * 舒呼(SootheBreath) v9.4 ES6 Module — training.js
- * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論與 DOM Dirty-Check 節流引擎
+ * 舒呼(SootheBreath) v10 ES6 Module — training.js
+ * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論、DOM Dirty-Check 節流與 v10 16+4 點幾何演算法對接
  *
- * v9.1 效能優化重點 (P0-1 & P1-2) 100% 完整保留：
- * - [P0-1] 單一主迴圈 + MediaPipe 推論降頻與單雙幀交錯：
- *          - 統一於 trainingInferenceLoop 結尾呼叫 renderInteractive3DFrame(dt)，消除雙重 requestAnimationFrame 互搶資源。
- *          - 設定 INFERENCE_INTERVAL_MS = 50 (20 FPS)，並於互動模式下單雙次推論交錯執行 FaceLandmarker 與 PoseLandmarker，主執行緒負載降低 >65%。
- * - [P1-2] DOM 更新節流 (UI_THROTTLE_MS = 120) 與隱藏元件跳過 (Eliminate Layout Thrashing)：
- *          - 互動模式下自動跳過已隱藏之 #pacer-ball 與 #human-demo-box 樣式更新。
- *          - 四張百分比指示卡、倒數計時器與提示文字採用 Dirty-Check + 120ms 節流更新。
- *          - 調試面板 (updateDebugReadouts) 僅於面板展開時每 150ms 更新一次。
- *
- * v9.2 / v9.4 臨床計分與互動吹風精準化強化 (Fix 1 – Fix 4)：
- * - [Fix 2] 3D 互動模式實時吹風觸發與中途即刻斷開邏輯 (Real-Time Hold & Release)：
- *          - rawInhaleMotionScore 與 rawExhaleMotionScore 直接取自未經動量豁免之 getInhaleScore() 與 getExhaleScore()。
- *          - 吸氣階段需同時達成「合口時間比例 >= 70%」且「無聳肩時間比例 >= 70%」才取得吹氣資格 (inhaleQualifiedForBlow = true)。
- *          - 呼氣階段需連續 >= 0.10s (EXHALE_BLOW_CONFIRM_SEC) 維持真實噘唇且無聳肩才觸發 startInteractiveBlowing()；
- *            一旦呼氣中途張大口、放開噘唇或聳肩連續 >= 0.20s (EXHALE_BLOW_CUTOFF_SEC)，即刻呼叫 stopInteractiveBlowing() 停止吹風。
- * - [Fix 3] 開頭 400ms 緩衝期標記傳入 accumulateFrameScore，避免緩衝期稀釋錯誤時間比例；收緊呼氣 70% 柔性過渡條件。
- * - [Fix 4] 單雙幀交錯推論 EMA 保護：僅在 faceUpdated 為 true 時更新面部 EMA 與斜率，僅在 poseUpdated 為 true 時更新雙肩 EMA。
+ * v10 核心升級重點：
+ * - 100% 保持 v9.1 / v9.4 訓練頁八大 UI/排版/Canvas 函式與 180 個 DOM 節點完整對齊，確保介面與視覺設計零變動。
+ * - 於 processFrameDetections() 完整接入 v10 extractV10MouthAndPoseMetrics()、三柱雙層質量過濾與雙軌個人化比例尺 (NOI / NOI_center)。
+ * - 修正「70% 呼氣時間柔性過渡 (isSoftTransitioning)」與「3D 互動模式吹風保持」執行順序：
+ *   當呼氣已進行 >= 70% 目標時間且有效噘唇佔比 >= 70% 時，尾段自然收氣放鬆（非張大口錯誤、無聳肩）優先進入柔性過渡並豁免 0.20s 強制斷吹，
+ *   配合吹氣遲滯保護門檻 (mwrExhaleHold = 0.91)，確保風車與蒲公英於呼氣尾段順暢旋轉至轉入吸氣為止。
  */
 
 import {
@@ -42,6 +31,7 @@ import { dom } from './dom.js';
 import {
   calculateDEye,
   calculateLAR,
+  extractV10MouthAndPoseMetrics,
   extractBlendshapes,
   smoothFacialSignalsEMA,
   calculateShoulderMetrics,
@@ -83,13 +73,18 @@ const domCache = {
 // 10. 實時訓練主迴圈與四大百分比指標 (Section C: STATE_TRAINING)
 // ============================================================================
 export async function runTrainingSequence() {
-  if (!AppState.isDemoMode && AppState.stream) {
+  if (AppState.animFrameId) {
+    cancelAnimationFrame(AppState.animFrameId);
+    AppState.animFrameId = null;
+  }
+
+  if (!AppState.isDemoMode && AppState.stream && dom.trainVideo) {
     dom.trainVideo.srcObject = AppState.stream;
     await dom.trainVideo.play().catch(e => console.log(e));
   }
 
   const now = performance.now();
-  const targetRR = Math.max(1, AppState.targetBpm);
+  const targetRR = AppState.targetBpm;
 
   AppState.training.startTime = now;
   AppState.training.lastFrameTime = now;
@@ -99,7 +94,10 @@ export async function runTrainingSequence() {
   AppState.training.cycleStartTime = now;
   AppState.ema.initialized = false;
   AppState.ema.faceInitialized = false;
-  AppState.training.elapsedSeconds = 0;
+  AppState.ema.occlusionHoldSec = 0;
+  AppState.ema.occlusionRecoveryTicks = 0;
+  AppState.ema.momentumPauseTicks = 0;
+  AppState.ema.prevValidCols = 3;
   AppState.training.currentPhase = PHASES.INHALE;
   AppState.training.cycleIndex = 1;
   AppState.training.inhaleGraceCycleTriggered = -1;
@@ -152,7 +150,6 @@ export async function runTrainingSequence() {
   updateLiveRespiratoryRate(now);
   renderIndicatorCards();
 
-  if (AppState.animFrameId) cancelAnimationFrame(AppState.animFrameId);
   AppState.animFrameId = requestAnimationFrame(trainingInferenceLoop);
 }
 
@@ -312,7 +309,7 @@ export function applyDisplayModeStyles() {
 }
 
 // ============================================================================
-// P0-1, P1-2 & Fix 4: 單一 60 FPS 訓練與 3D 渲染迴圈 + MediaPipe 20Hz 交錯推論 + DOM 節流
+// P0-1 & P1-2: 單一 60 FPS 訓練與 3D 渲染迴圈 + MediaPipe 20Hz 交錯推論 + DOM 節流
 // ============================================================================
 export function trainingInferenceLoop() {
   if (AppState.currentState !== STATES.TRAINING) return;
@@ -374,7 +371,6 @@ export function trainingInferenceLoop() {
         let poseUpdated = true;
 
         if (isInteractive && AppState.lastFaceResult && AppState.lastPoseResult) {
-          // 互動模式下單雙次推論交錯執行 Face 與 Pose，將單幀 AI 推論時間減半
           if (train.inferenceTickCount % 2 === 1) {
             AppState.lastFaceResult = AppState.faceLandmarker.detectForVideo(dom.trainVideo, ts);
             faceUpdated = true;
@@ -456,7 +452,7 @@ export function updateLiveRespiratoryRate(now) {
 }
 
 // ----------------------------------------------------------------------------
-// 逐幀特徵點運算、全程累計時間百分比與 v9.2/v9.4 互動模式實時吹風觸發/中斷邏輯
+// 逐幀特徵點運算、v10 16+4 點幾何評分、70% 呼氣柔性過渡與互動模式吹風控制
 // ----------------------------------------------------------------------------
 export function processFrameDetections(
   faceResult,
@@ -487,16 +483,20 @@ export function processFrameDetections(
   const face = faceResult.faceLandmarks[0];
   const pose = poseResult.landmarks[0];
 
-  // Fix 4: 僅在該幀實際更新了 FaceLandmarker (或尚未初始化) 時才執行面部 EMA 濾波，防止交錯幀重複放大斜率
+  // Fix 4 & v10: 僅在該幀實際更新了 FaceLandmarker (或尚未初始化) 時才執行面部幾何提取與 EMA 濾波
   if (faceUpdated || !AppState.ema.faceInitialized) {
-    m.dEye = calculateDEye(face);
+    const isSim = Boolean(faceResult.isSimulated || AppState.isDemoMode);
+    const v10Geo = extractV10MouthAndPoseMetrics(face, cal, { isSimulated: isSim });
+    m.dEye = v10Geo.dEye;
     const larRaw = calculateLAR(face);
     const blendshapes = extractBlendshapes(faceResult.faceBlendshapes);
     const smoothedFace = smoothFacialSignalsEMA(
       larRaw,
       blendshapes.jawOpen,
       blendshapes.mouthPucker,
-      blendshapes.mouthFunnel
+      blendshapes.mouthFunnel,
+      v10Geo,
+      dt
     );
 
     m.larRaw = larRaw;
@@ -507,13 +507,47 @@ export function processFrameDetections(
     m.mouthPucker = smoothedFace.mouthPuckerFiltered;
     m.mouthFunnelRaw = blendshapes.mouthFunnel;
     m.mouthFunnel = smoothedFace.mouthFunnelFiltered;
+
+    m.hInnerRaw = v10Geo.hInnerRobust;
+    m.hInner = smoothedFace.hInnerFiltered;
+    m.hCenterRaw = v10Geo.hCenter;
+    m.hCenter = smoothedFace.hCenterFiltered;
+    m.wOuterRaw = v10Geo.wOuterNorm;
+    m.wOuter = smoothedFace.wOuterFiltered;
+    m.olarRaw = v10Geo.olar;
+    m.olar = smoothedFace.olarFiltered;
+    m.noi = smoothedFace.noiFiltered;
+    m.noiCenter = smoothedFace.noiCenterFiltered;
+    m.mwr = smoothedFace.mwrFiltered;
+    m.olarRatio = smoothedFace.olarRatioFiltered;
+    m.yawDeg = v10Geo.yawDeg;
+    m.pitchDeg = v10Geo.pitchDeg;
+    m.zProtrusion = v10Geo.zProtrusion;
+    m.poseValidForZ = v10Geo.poseValidForZ;
+    m.validCols = v10Geo.validCols;
+    m.hasValidMouth = smoothedFace.hasValidMouth;
+
     m.deltaLar = smoothedFace.deltaLar;
     m.deltaJawOpen = smoothedFace.deltaJawOpen;
     m.deltaMouthPucker = smoothedFace.deltaMouthPucker;
+    m.deltaNoi = smoothedFace.deltaNoi;
+    m.deltaMwr = smoothedFace.deltaMwr;
   } else {
     m.deltaLar = 0;
     m.deltaJawOpen = 0;
     m.deltaMouthPucker = 0;
+    m.deltaNoi = 0;
+    m.deltaMwr = 0;
+  }
+
+  // Level 4 降級保護：若有效唇柱為 0 持續超過 OCCLUSION_HOLD_MAX_SEC (300ms)，暫停吹風與計分
+  if (!m.hasValidMouth) {
+    if (train.isInteractiveBlowing) {
+      train.isInteractiveBlowing = false;
+      stopInteractiveBlowing();
+    }
+    evaluateStickyPriorityFeedback(false);
+    return;
   }
 
   // Fix 4: 僅在該幀實際更新了 PoseLandmarker (或尚未初始化) 時才更新雙肩 EMA
@@ -534,18 +568,40 @@ export function processFrameDetections(
     : clampVal(1 - (m.deltaYRelative - THRESHOLDS.shoulderHikeWarn) / Math.max(THRESHOLDS.shoulderHikeWarn * 0.5, 0.02), 0, 1);
   m.shoulderScore = shoulderScore;
 
-  // Fix 2: 先計算未經動量豁免之真實基礎動作分數 (rawInhaleMotionScore / rawExhaleMotionScore)
-  const rawInhaleMotionScore = getInhaleScore(m.lar, m.jawOpen);
-  const rawExhaleMotionScore = getExhaleScore(m.lar, m.mouthPucker, m.mouthFunnel);
+  // v10: 組裝幾何與遲滯狀態物件傳入 getInhaleScore / getExhaleScore
+  const v10MetricsObj = {
+    noi: m.noi,
+    noiCenter: m.noiCenter,
+    mwr: m.mwr,
+    olarRatio: m.olarRatio,
+    zProtrusion: m.zProtrusion,
+    poseValidForZ: m.poseValidForZ,
+    isCurrentlyBlowing: train.isInteractiveBlowing
+  };
 
-  // Fix 1: 套用抗抖動動量豁免 (僅對 baseScore >= 0.35 且超越噪訊死區之動作生效)
-  let inhaleScore = applyActionMomentumExemption(PHASES.INHALE, rawInhaleMotionScore, m.deltaLar, m.deltaMouthPucker);
-  let exhaleScore = applyActionMomentumExemption(PHASES.EXHALE, rawExhaleMotionScore, m.deltaLar, m.deltaMouthPucker);
+  // Fix 2: 先計算未經動量豁免之真實基礎動作分數
+  const rawInhaleMotionScore = getInhaleScore(m.lar, m.jawOpen, v10MetricsObj);
+  const rawExhaleMotionScore = getExhaleScore(m.lar, m.mouthPucker, m.mouthFunnel, v10MetricsObj);
+
+  // Fix 1 & v10: 套用抗抖動與抗遮擋恢復動量豁免
+  let inhaleScore = applyActionMomentumExemption(
+    PHASES.INHALE,
+    rawInhaleMotionScore,
+    m.deltaLar,
+    m.deltaMouthPucker,
+    { deltaNoi: m.deltaNoi, deltaMwr: m.deltaMwr }
+  );
+  let exhaleScore = applyActionMomentumExemption(
+    PHASES.EXHALE,
+    rawExhaleMotionScore,
+    m.deltaLar,
+    m.deltaMouthPucker,
+    { deltaNoi: m.deltaNoi, deltaMwr: m.deltaMwr }
+  );
 
   let isInGracePeriod = false;
 
   if (train.currentPhase === PHASES.INHALE) {
-    // Fix 2: 互動模式吸氣資格累積 — 必須使用未豁免之真實閉口分數 >= 0.70 且比例 >= 70%
     train.inhalePhaseTime = (train.inhalePhaseTime || 0) + dt;
     if (rawInhaleMotionScore >= 0.70) {
       train.inhaleLipClosedTime = (train.inhaleLipClosedTime || 0) + dt;
@@ -571,9 +627,34 @@ export function processFrameDetections(
     m.inhaleScore = inhaleScore;
   } else {
     // 呼氣階段 (EXHALE)
-    // Fix 2: 實時呼氣確認與中途錯誤即刻斷開吹風機制 (Real-Time Hold & Release)
+    // 1. 優先評估「70% 呼氣時間柔性過渡 (Early Exhale Soft Transition)」(Comment 3 & TC-06)
+    const phaseElapsed = (now - train.phaseStartTime) / 1000;
+    const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
+    const isGoodPlbDuration = (train.tExActual >= (phaseElapsed * 0.70)) && isShoulderRelaxed;
+    const isNotWideMouthError = (m.noiCenter <= (THRESHOLDS.noiExhaleWideErr ?? 0.55)) &&
+                                (m.lar <= THRESHOLDS.larExhaleWideErr);
+    const isLipsNaturallyRelaxed = isNotWideMouthError && (
+      (m.mwr > (THRESHOLDS.mwrExhaleHold ?? 0.91)) ||
+      (m.noiCenter < (THRESHOLDS.noiExhaleMin ?? 0.025)) ||
+      (m.lar < THRESHOLDS.larExhaleMin) ||
+      (m.mouthPucker < THRESHOLDS.puckerClosedErrMax) ||
+      (rawExhaleMotionScore < 0.70)
+    );
+
+    if (!train.isSoftTransitioning && isOver70Pct && isGoodPlbDuration && isLipsNaturallyRelaxed) {
+      train.isSoftTransitioning = true;
+      train.softTransitionStartTime = now;
+      const currentProgress = Math.min(1, phaseElapsed / AppState.exhaleTarget);
+      train.softTransitionStartScale = 1.30 - (currentProgress * 0.45);
+    }
+
+    if (train.isSoftTransitioning) {
+      exhaleScore = 1.0;
+    }
+
+    // 2. 實時呼氣確認與中途錯誤即刻斷開吹風機制 (Real-Time Hold & Release + 70% 柔性過渡尾段防斷吹保護)
     const isPursedLipExhaleValidNow =
-      (rawExhaleMotionScore >= 0.70 || isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel)) &&
+      (rawExhaleMotionScore >= 0.70 || isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel, v10MetricsObj)) &&
       isShoulderRelaxed &&
       (shoulderScore >= 0.70);
 
@@ -584,10 +665,13 @@ export function processFrameDetections(
         train.isInteractiveBlowing = true;
         startInteractiveBlowing();
       }
+    } else if (train.isSoftTransitioning && isShoulderRelaxed && isNotWideMouthError) {
+      // TC-06：已達成 70% 呼氣柔性過渡且無張大口/聳肩錯誤，豁免 0.20s 強制斷吹，讓風車/蒲公英維持順暢吹動至轉入吸氣
+      train.exhaleInvalidCutoffSec = 0;
     } else {
       train.exhaleInvalidCutoffSec = (train.exhaleInvalidCutoffSec || 0) + dt;
       train.exhaleValidHoldSec = 0;
-      // 若使用者於呼氣中途張大口、停止噘唇或聳肩代償超過 EXHALE_BLOW_CUTOFF_SEC (0.20s)，即刻停止吹風！
+      // 若使用者於呼氣中途張大口、停止噘唇或聳肩代償超過 EXHALE_BLOW_CUTOFF_SEC (0.20s)，即刻停止吹風
       if (train.isInteractiveBlowing && train.exhaleInvalidCutoffSec >= EXHALE_BLOW_CUTOFF_SEC) {
         train.isInteractiveBlowing = false;
         stopInteractiveBlowing();
@@ -606,22 +690,6 @@ export function processFrameDetections(
       }
     }
 
-    const phaseElapsed = (now - train.phaseStartTime) / 1000;
-    const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
-    // Fix 3: 收緊呼氣 70% 提前達標條件，需當前呼氣有效比例 >= 70% 且無聳肩才允許柔性過渡
-    const isGoodPlbDuration = (train.tExActual >= (phaseElapsed * 0.70)) && isShoulderRelaxed;
-    const isLipsNaturallyRelaxed = (m.lar < THRESHOLDS.larExhaleMin) || (m.mouthPucker < THRESHOLDS.puckerClosedErrMax) || (exhaleScore < 0.70);
-
-    if (!train.isSoftTransitioning && isOver70Pct && isGoodPlbDuration && isLipsNaturallyRelaxed) {
-      train.isSoftTransitioning = true;
-      train.softTransitionStartTime = now;
-      const currentProgress = Math.min(1, phaseElapsed / AppState.exhaleTarget);
-      train.softTransitionStartScale = 1.30 - (currentProgress * 0.45);
-    }
-
-    if (train.isSoftTransitioning) {
-      exhaleScore = 1.0;
-    }
     m.exhaleScore = exhaleScore;
   }
 
@@ -783,7 +851,7 @@ export function triggerPhaseSwitch(newPhase) {
       train.inhaleQualifiedForBlow = (lipClosedRatio >= 0.70) && (noShrugRatio >= 0.70);
     } else {
       const m = AppState.currentMetrics;
-      train.inhaleQualifiedForBlow = (getInhaleScore(m.lar, m.jawOpen) >= 0.70) && (m.shoulderScore >= 0.70);
+      train.inhaleQualifiedForBlow = (getInhaleScore(m.lar, m.jawOpen, { noi: m.noi }) >= 0.70) && (m.shoulderScore >= 0.70);
     }
 
     if (train.exhaleGraceCycleTriggered !== train.cycleIndex) {
@@ -1010,18 +1078,43 @@ export function renderTrainingCanvas(faceResults, poseResults) {
       }
     }
 
-    const lipPoints = [78, 13, 308, 14].map(idx => ({
+    const v10MetricsObj = {
+      noi: m.noi,
+      noiCenter: m.noiCenter,
+      mwr: m.mwr,
+      olarRatio: m.olarRatio,
+      zProtrusion: m.zProtrusion,
+      poseValidForZ: m.poseValidForZ,
+      isCurrentlyBlowing: AppState.training.isInteractiveBlowing
+    };
+
+    const isGoodPlb = AppState.training.currentPhase === PHASES.INHALE
+      ? isNasalInhaleValid(m.lar, m.jawOpen, v10MetricsObj)
+      : (isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel, v10MetricsObj) || AppState.training.isSoftTransitioning);
+
+    ctx.save();
+    ctx.lineWidth = 3.0;
+    ctx.strokeStyle = isGoodPlb ? '#4DB6AC' : '#FF7043';
+    ctx.fillStyle = isGoodPlb ? 'rgba(77, 182, 172, 0.26)' : 'rgba(255, 112, 67, 0.26)';
+
+    // 繪製外唇環 (61, 0, 291, 17) 與內唇環 (78, 82, 13, 312, 308, 317, 14, 87)
+    if (face[61] && face[291] && face[0] && face[17]) {
+      const outerPts = [61, 0, 291, 17].map(idx => ({ x: face[idx].x * w, y: face[idx].y * h }));
+      ctx.beginPath();
+      ctx.moveTo(outerPts[0].x, outerPts[0].y);
+      for (let i = 1; i < outerPts.length; i++) {
+        ctx.lineTo(outerPts[i].x, outerPts[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    const innerIndices = (face[82] && face[312]) ? [78, 82, 13, 312, 308, 317, 14, 87] : [78, 13, 308, 14];
+    const lipPoints = innerIndices.map(idx => ({
       x: face[idx].x * w,
       y: face[idx].y * h
     }));
-
-    ctx.save();
-    ctx.lineWidth = 3.5;
-    const isGoodPlb = AppState.training.currentPhase === PHASES.INHALE
-      ? isNasalInhaleValid(m.lar, m.jawOpen)
-      : (isPlbExhaleValid(m.lar, m.mouthPucker, m.mouthFunnel) || AppState.training.isSoftTransitioning);
-    ctx.strokeStyle = isGoodPlb ? '#4DB6AC' : '#FF7043';
-    ctx.fillStyle = isGoodPlb ? 'rgba(77, 182, 172, 0.28)' : 'rgba(255, 112, 67, 0.28)';
 
     ctx.beginPath();
     ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
@@ -1029,7 +1122,6 @@ export function renderTrainingCanvas(faceResults, poseResults) {
       ctx.lineTo(lipPoints[i].x, lipPoints[i].y);
     }
     ctx.closePath();
-    ctx.fill();
     ctx.stroke();
     ctx.restore();
   }

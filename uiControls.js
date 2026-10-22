@@ -92,10 +92,13 @@ export function switchViewState(targetState) {
 export function updateDebugReadouts() {
   const m = AppState.currentMetrics;
   if (!dom.dbgLar) return;
-  dom.dbgLar.textContent = m.lar.toFixed(3);
+  const noiPct = typeof m.noi === "number" ? `${Math.round(m.noi * 100)}%` : "0%";
+  const mwrVal = typeof m.mwr === "number" ? m.mwr.toFixed(2) : "1.00";
+  const olarRatioVal = typeof m.olarRatio === "number" ? m.olarRatio.toFixed(2) : "1.00";
+  dom.dbgLar.textContent = `${m.lar.toFixed(3)} (NOI:${noiPct})`;
   if (dom.dbgJaw) dom.dbgJaw.textContent = m.jawOpen.toFixed(3);
-  dom.dbgPucker.textContent = m.mouthPucker.toFixed(3);
-  dom.dbgFunnel.textContent = m.mouthFunnel.toFixed(3);
+  dom.dbgPucker.textContent = `${m.mouthPucker.toFixed(2)} (MWR:${mwrVal})`;
+  dom.dbgFunnel.textContent = `${m.mouthFunnel.toFixed(2)} (OLAR:${olarRatioVal}x)`;
   dom.dbgShoulder.textContent = m.deltaYRelative.toFixed(3);
   if (dom.dbgDistEs) dom.dbgDistEs.textContent = m.distCurr.toFixed(3);
   dom.dbgDeye.textContent = m.dEye.toFixed(3);

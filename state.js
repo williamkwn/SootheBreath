@@ -1,11 +1,14 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v9.4)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v10)
  * ESM Core Engine: MediaPipe Tasks Vision 0.10.14 + Three.js 3D Interactive Mode (60 FPS Optimized)
  *
- * v9.4 整合與修復重點：
- * - 完整保留 v8_ES / v9 / v9.1 穩定版之 CALIB_STEPS_CONFIG (0-indexed Array)、DEFAULT_CALIB_BASELINES (含 LAR_plb / mouthPucker_plb / mouthFunnel_plb)
- *   及 DEFAULT_THRESHOLDS 結構，徹底修復 v9.2 無法進入五步校準流程之問題。
- * - 完整保留 v9.2 Fix 1 至 Fix 4 精準評分、三層橫幅警示與 3D 互動模式實時吹風觸發/中途即刻斷開常數與狀態欄位。
+ * v10 核心升級重點：
+ * - 完整保留 v8_ES / v9 / v9.1 / v9.4 穩定版之 CALIB_STEPS_CONFIG (0-indexed Array)、DEFAULT_CALIB_BASELINES、
+ *   180 個 DOM 結構對齊與 P0–P2 60 FPS 渲染管線，確保應用程式介面與視覺設計 100% 零變動。
+ * - 新增 v10「16+4 點純 2D 幾何主導 + 三柱穩健質量過濾 + 圓唇縮寬複合演算法」動態閾值與雙軌校準基準：
+ *   1. 吸氣三柱穩健基準 (H_inner_closed / H_inner_open -> NOI) 與呼氣中柱專屬基準 (H_center_closed / H_center_open -> NOI_center)。
+ *   2. 外嘴角收窄比 MWR 統一目標門檻 (mwrExhaleTarget 預設 0.88，動態範圍 [0.82, 0.92])、吹氣保持遲滯門檻 (mwrExhaleHold 預設 0.91) 與未收窄上限 (mwrExhaleMax = 0.97)。
+ *   3. 外唇圓潤長寬比提升目標 (olarRatioTarget 預設 1.18)、中央氣孔守門員 (noiExhaleMin = 0.025) 與遮擋恢復平滑計數器。
  */
 
 // ============================================================================
@@ -25,15 +28,15 @@ export const PHASES = {
 
 // 預設臨床推薦閾值 (Default Clinical Thresholds — 用於初始化與「恢復預設推薦閾值」)
 export const DEFAULT_THRESHOLDS = {
-  larInhaleMax: 0.06,          // 吸氣閉口鼻吸 LAR 上限 (LAR <= 0.06)
-  jawOpenInhaleMax: 0.05,      // 吸氣雙重聯合判定：下頜微張上限 (jawOpen < 0.05)
+  larInhaleMax: 0.06,          // 向後兼容：吸氣閉口鼻吸 LAR 上限
+  jawOpenInhaleMax: 0.05,      // 吸氣雙重聯合判定：下頜微張上限 (jawOpen < 0.05，當 NOI <= 0.20 時自動豁免放寬至 1.8 倍)
   larInhaleErr: 0.08,          // 吸氣張口明顯錯誤閾值
   larExhaleMin: 0.04,          // 呼氣噘唇 LAR 下限 (0.04 <= LAR <= 0.24)
   larExhaleMax: 0.24,          // 呼氣噘唇 LAR 上限
   larExhaleWideErr: 0.26,      // 呼氣張大口錯誤閾值
   larExhaleClosedErr: 0.03,    // 呼氣完全閉口錯誤閾值
-  mouthPuckerMin: 0.36,        // 呼氣噘唇 mouthPucker 下限 (預設 0.52 * 70% = 0.36)
-  mouthFunnelMin: 0.35,        // 呼氣漏斗狀 mouthFunnel 下限 (>= 0.35)
+  mouthPuckerMin: 0.36,        // 呼氣噘唇 mouthPucker 輔助參考閾值 (預設 0.52 * 70% = 0.36)
+  mouthFunnelMin: 0.35,        // 呼氣漏斗狀 mouthFunnel 輔助參考閾值 (>= 0.35)
   puckerWideErrMax: 0.30,
   puckerClosedErrMax: 0.25,    // 呼氣自然放鬆唇形閾值 (mouthPucker < 0.25)
   shoulderHikeWarn: 0.12,      // 耳肩相對間距縮短聳肩代償警示 (Delta_Y_relative > 0.12)
@@ -41,10 +44,24 @@ export const DEFAULT_THRESHOLDS = {
   shoulderTiltMax: 0.15,       // 雙肩左右傾斜度上限
   earlyExhaleRatio: 0.70,      // 呼氣階段 70% 動態完成柔性過渡門檻 (phaseElapsed >= T_exhale_target * 0.70)
   emaAlpha: 0.35,              // 雙肩座標 EMA 指數移動平均平滑係數 (alpha = 0.35)
-  emaLarAlpha: 0.25,           // 嘴唇開合比 LAR EMA 平滑係數 (alpha = 0.25)
+  emaLarAlpha: 0.25,           // 嘴唇幾何指標 EMA 平滑係數 (alpha = 0.25)
   emaJawAlpha: 0.25,           // 下頜張開度 jawOpen EMA 平滑係數 (alpha = 0.25)
   emaPuckerAlpha: 0.30,        // 噘唇度 mouthPucker EMA 平滑係數 (alpha = 0.30)
-  puckerPeakEffortDiscount: 0.70 // 校準峰值努力折扣係數 (70% of calibrated peak mouthPucker)
+  puckerPeakEffortDiscount: 0.70, // 校準峰值努力折扣係數 (70% of calibrated peak contraction)
+
+  // v10 新增：16+4 點純 2D 幾何主導演算法與遲滯防抖統一閾值
+  noiInhalePassMax: 0.22,      // 吸氣個人化開合比例尺 NOI 滿分寬容上限 (0%–22% 均視為合格閉口鼻吸，容許 1-2mm 自然放鬆微縫)
+  noiInhaleZeroMax: 0.38,      // 吸氣個人化開合比例尺 NOI 零分上限 (22%–38% 平滑線性衰減，27% 對應 0.70 合格線)
+  mwrExhaleTarget: 0.88,       // 呼氣外嘴角收窄比 MWR 滿分目標閾值 (預設 0.88，動態校準範圍 [0.82, 0.92])
+  mwrExhaleHold: 0.91,         // 呼氣吹風保持遲滯保護門檻 Hysteresis (mwrExhaleTarget + 0.03，範圍 [0.85, 0.94])
+  mwrExhaleMax: 0.97,          // 呼氣外嘴角未收窄零分門檻 (MWR >= 0.97 代表完全未縮窄嘴闊，S_mwr = 0)
+  olarRatioTarget: 1.18,       // 呼氣外唇圓潤長寬比提升目標 (OLAR_curr / OLAR_closed >= 1.18 滿分，動態範圍 [1.12, 1.35])
+  noiExhaleMin: 0.025,         // 呼氣中柱專屬最小氣孔守門員 (NOI_center >= 2.5%，攔截完全閉口死抿無氣孔)
+  noiExhaleMax: 0.42,          // 呼氣中柱專屬理想圓孔上限 (NOI_center <= 42%)
+  noiExhaleWideErr: 0.55,      // 呼氣中柱張大口硬性錯誤攔截門檻 (NOI_center > 55% 強制 0 分)
+  yawMaxForZDeg: 12.0,         // Z 軸輔助微調之偏航角門控上限 (|yawDeg| <= 12°)
+  pitchMaxForZDeg: 10.0,       // Z 軸輔助微調之俯仰角門控上限 (|pitchDeg| <= 10°)
+  yawSideFilterDeg: 15.0       // 側臉單側內唇柱剔除與外嘴角半闊度補償門檻 (|yawDeg| > 15°)
 };
 
 // 全域動態臨床閾值 (由五步個人化基準校準或 Debug Drawer 動態更新)
@@ -63,7 +80,20 @@ export const DEFAULT_CALIB_BASELINES = {
   Dist_shrug: 0.240,
   Dist_relax: 0.300,
   Dist_base: 0.300,
-  yShoulderBase: 0.720
+  yShoulderBase: 0.720,
+
+  // v10 新增：雙軌內唇高度基準 (三柱穩健 vs 中柱專屬) 與外唇幾何基準
+  H_inner_closed: 0.018,       // 第 1 步【閉嘴】三柱穩健內唇高度基準 (供吸氣 NOI 使用)
+  H_inner_open: 0.165,         // 第 2 步【張大口】三柱穩健內唇高度基準 (供吸氣 NOI 使用)
+  H_center_closed: 0.020,      // 第 1 步【閉嘴】中柱 (13-14) 專屬內唇高度基準 (供呼氣 NOI_center 使用)
+  H_center_open: 0.180,        // 第 2 步【張大口】中柱 (13-14) 專屬內唇高度基準 (供呼氣 NOI_center 使用)
+  W_outer_closed: 0.460,       // 第 1 步【閉嘴】外嘴角 (61-291) 眼距正規化闊度基準
+  W_outer_plb: 0.382,          // 第 3 步【噘唇】外嘴角 (61-291) 眼距正規化闊度基準
+  MWR_plb: 0.830,              // 第 3 步【噘唇】個人外嘴角收窄比基準 (W_outer_plb / W_outer_closed)
+  OLAR_closed: 0.250,          // 第 1 步【閉嘴】外唇圓潤長寬比基準 (Dist(0,17) / Dist(61,291))
+  OLAR_plb: 0.345,             // 第 3 步【噘唇】外唇圓潤長寬比基準
+  pitchRatio_closed: 0.750,    // 第 1 步【閉嘴】頭部垂直俯仰比基準
+  zProtrusion_closed: 0.012    // 第 1 步【閉嘴】唇中相對嘴角 Z 軸深度差基準
 };
 
 // 五步校準步驟定義 (Step 1 to Step 5 — 0-indexed Array 供 calibration.js 讀取)
@@ -137,7 +167,7 @@ export const HUMAN_IMAGES = {
   }
 };
 
-// 訓練開局緩衝期、門檻、v9.1 效能節流常數與 v9.2/v9.4 互動吹風/實時警示常數
+// 訓練開局緩衝期、門檻、v9.1 效能節流常數與 v9.2/v9.4/v10 互動吹風/實時警示常數
 export const ROLLING_WINDOW_SECONDS = 20.0;
 export const INITIAL_GRACE_SECONDS = 10.0;       // 前 10 秒開局緩衝期
 export const PHASE_ENTRY_GRACE_MS = 400;         // 吸呼雙向階段切換前 400ms 生理反應緩衝期
@@ -148,6 +178,9 @@ export const UI_THROTTLE_MS = 120;               // P1-2: 卡片與 DOM 更新�
 export const EXHALE_BLOW_CONFIRM_SEC = 0.10;     // Fix 2: 呼氣階段連續維持合格噘唇 >= 0.10s 啟動吹風
 export const EXHALE_BLOW_CUTOFF_SEC = 0.20;      // Fix 2: 呼氣中途錯誤動作持續 >= 0.20s 立即切斷吹風
 export const REALTIME_ERROR_BANNER_SEC = 0.90;   // Fix 3: 單一階段內持續發生錯誤動作 >= 0.90s 即時觸發橫幅提示
+export const OCCLUSION_HOLD_MAX_SEC = 0.30;      // v10: 有效唇柱為 0 時最多保留上一幀有效值 0.30s (6 ticks)
+export const OCCLUSION_RECOVERY_TICKS = 6;       // v10: 遮擋恢復後 6 幀 (300ms) 漸進 EMA 平滑過渡
+export const MOMENTUM_RECOVERY_PAUSE_TICKS = 4;  // v10: 遮擋恢復後首 4 幀 (200ms) 暫停動量豁免防暴衝
 
 // 確保 MediaPipe 視訊時間戳嚴格遞增
 let lastVideoTimestamp = 0;
@@ -227,7 +260,24 @@ export const AppState = {
     deltaLar: 0,
     deltaJawOpen: 0,
     deltaMouthPucker: 0,
-    deltaMouthFunnel: 0
+    deltaMouthFunnel: 0,
+
+    // v10 新增：16+4 點幾何與遮擋恢復狀態
+    hInnerPrev: 0.018,
+    hCenterPrev: 0.020,
+    wOuterPrev: 0.460,
+    olarPrev: 0.250,
+    noiPrev: 0.0,
+    noiCenterPrev: 0.0,
+    mwrPrev: 1.0,
+    olarRatioPrev: 1.0,
+    deltaNoi: 0,
+    deltaMwr: 0,
+    lastColHeights: { L: 0.018, M: 0.020, R: 0.018 },
+    prevValidCols: 3,
+    occlusionHoldSec: 0,
+    occlusionRecoveryTicks: 0,
+    momentumPauseTicks: 0
   },
 
   calibration: {
@@ -242,7 +292,13 @@ export const AppState = {
       mouthPucker: [],
       mouthFunnel: [],
       distEarShoulder: [],
-      yShoulder: []
+      yShoulder: [],
+      hInner: [],
+      hCenter: [],
+      wOuter: [],
+      olar: [],
+      pitchRatio: [],
+      zProtrusion: []
     },
     stepSource: {
       1: 'default',
@@ -267,7 +323,20 @@ export const AppState = {
     dEyeBase: DEFAULT_CALIB_BASELINES.D_eye,
     distBase: DEFAULT_CALIB_BASELINES.Dist_base,
     yShoulderBase: DEFAULT_CALIB_BASELINES.yShoulderBase,
-    larRest: DEFAULT_CALIB_BASELINES.LAR_closed
+    larRest: DEFAULT_CALIB_BASELINES.LAR_closed,
+
+    // v10 新增：雙軌內唇高度與外唇縮寬/圓潤個人化基準
+    H_inner_closed: DEFAULT_CALIB_BASELINES.H_inner_closed,
+    H_inner_open: DEFAULT_CALIB_BASELINES.H_inner_open,
+    H_center_closed: DEFAULT_CALIB_BASELINES.H_center_closed,
+    H_center_open: DEFAULT_CALIB_BASELINES.H_center_open,
+    W_outer_closed: DEFAULT_CALIB_BASELINES.W_outer_closed,
+    W_outer_plb: DEFAULT_CALIB_BASELINES.W_outer_plb,
+    MWR_plb: DEFAULT_CALIB_BASELINES.MWR_plb,
+    OLAR_closed: DEFAULT_CALIB_BASELINES.OLAR_closed,
+    OLAR_plb: DEFAULT_CALIB_BASELINES.OLAR_plb,
+    pitchRatio_closed: DEFAULT_CALIB_BASELINES.pitchRatio_closed,
+    zProtrusion_closed: DEFAULT_CALIB_BASELINES.zProtrusion_closed
   },
 
   currentMetrics: {
@@ -283,6 +352,29 @@ export const AppState = {
     deltaLar: 0.00,
     deltaJawOpen: 0.00,
     deltaMouthPucker: 0.00,
+
+    // v10 新增：實時幾何、姿態與質量指標
+    hInnerRaw: 0.018,
+    hInner: 0.018,
+    hCenterRaw: 0.020,
+    hCenter: 0.020,
+    wOuterRaw: 0.460,
+    wOuter: 0.460,
+    olarRaw: 0.250,
+    olar: 0.250,
+    noi: 0.00,
+    noiCenter: 0.00,
+    mwr: 1.00,
+    olarRatio: 1.00,
+    deltaNoi: 0.00,
+    deltaMwr: 0.00,
+    yawDeg: 0.0,
+    pitchDeg: 0.0,
+    zProtrusion: 0.0,
+    poseValidForZ: true,
+    validCols: 3,
+    hasValidMouth: true,
+
     inhaleScore: 1.0,
     exhaleScore: 1.0,
     shoulderScore: 1.0,

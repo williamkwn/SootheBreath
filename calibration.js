@@ -1,6 +1,13 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — calibration.js
+ * 舒呼(SootheBreath) v10 ES6 Module — calibration.js
  * 五步個人化動態基準校準系統 (5-Step Personalized Dynamic Baseline Calibration)
+ *
+ * v10 升級重點：
+ * - 100% 保持既有五步校準 UI、按鈕互動、固定高度排版與 0-indexed CALIB_STEPS_CONFIG 資料結構。
+ * - 於第 1 步【閉嘴】、第 2 步【張大口】、第 3 步【噘唇】背景自動同步採集雙軌內唇基準 (H_inner_closed/open 與 H_center_closed/open)、
+ *   外嘴角闊度基準 (W_outer_closed/plb -> MWR_plb)、外唇圓潤長寬比基準 (OLAR_closed/plb) 與俯仰基準 (pitchRatio_closed)。
+ * - 於 computeAndSyncDynamicThresholds() 中以統一之 70% 峰值努力折扣公式同步計算 mwrExhaleTarget [0.82, 0.92]、
+ *   mwrExhaleHold (mwrExhaleTarget + 0.03) 及 olarRatioTarget [1.12, 1.35]。
  */
 
 import {
@@ -20,6 +27,7 @@ import { startCamera } from './camera.js';
 import {
   calculateDEye,
   calculateLAR,
+  extractV10MouthAndPoseMetrics,
   extractBlendshapes,
   smoothFacialSignalsEMA,
   smoothShoulderLandmarksEMA,
@@ -56,7 +64,13 @@ export async function runCalibrationSequence(resetAll = true) {
         mouthPucker: [],
         mouthFunnel: [],
         distEarShoulder: [],
-        yShoulder: []
+        yShoulder: [],
+        hInner: [],
+        hCenter: [],
+        wOuter: [],
+        olar: [],
+        pitchRatio: [],
+        zProtrusion: []
       },
       stepSource: { 1: 'default', 2: 'default', 3: 'default', 4: 'default', 5: 'default' },
       stepSampleCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
@@ -73,7 +87,20 @@ export async function runCalibrationSequence(resetAll = true) {
       dEyeBase: DEFAULT_CALIB_BASELINES.D_eye,
       distBase: DEFAULT_CALIB_BASELINES.Dist_base,
       yShoulderBase: DEFAULT_CALIB_BASELINES.yShoulderBase,
-      larRest: DEFAULT_CALIB_BASELINES.LAR_closed
+      larRest: DEFAULT_CALIB_BASELINES.LAR_closed,
+
+      // v10 雙軌內唇基準與外唇幾何基準
+      H_inner_closed: DEFAULT_CALIB_BASELINES.H_inner_closed,
+      H_inner_open: DEFAULT_CALIB_BASELINES.H_inner_open,
+      H_center_closed: DEFAULT_CALIB_BASELINES.H_center_closed,
+      H_center_open: DEFAULT_CALIB_BASELINES.H_center_open,
+      W_outer_closed: DEFAULT_CALIB_BASELINES.W_outer_closed,
+      W_outer_plb: DEFAULT_CALIB_BASELINES.W_outer_plb,
+      MWR_plb: DEFAULT_CALIB_BASELINES.MWR_plb,
+      OLAR_closed: DEFAULT_CALIB_BASELINES.OLAR_closed,
+      OLAR_plb: DEFAULT_CALIB_BASELINES.OLAR_plb,
+      pitchRatio_closed: DEFAULT_CALIB_BASELINES.pitchRatio_closed,
+      zProtrusion_closed: DEFAULT_CALIB_BASELINES.zProtrusion_closed
     };
   }
 
@@ -108,7 +135,13 @@ export function clearStepSamplesBuffer() {
     mouthPucker: [],
     mouthFunnel: [],
     distEarShoulder: [],
-    yShoulder: []
+    yShoulder: [],
+    hInner: [],
+    hCenter: [],
+    wOuter: [],
+    olar: [],
+    pitchRatio: [],
+    zProtrusion: []
   };
 }
 
@@ -319,16 +352,27 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
       cal.D_eye = DEFAULT_CALIB_BASELINES.D_eye;
       cal.dEyeBase = cal.D_eye;
       cal.larRest = cal.LAR_closed;
+      cal.H_inner_closed = DEFAULT_CALIB_BASELINES.H_inner_closed;
+      cal.H_center_closed = DEFAULT_CALIB_BASELINES.H_center_closed;
+      cal.W_outer_closed = DEFAULT_CALIB_BASELINES.W_outer_closed;
+      cal.OLAR_closed = DEFAULT_CALIB_BASELINES.OLAR_closed;
+      cal.pitchRatio_closed = DEFAULT_CALIB_BASELINES.pitchRatio_closed;
+      cal.zProtrusion_closed = DEFAULT_CALIB_BASELINES.zProtrusion_closed;
       summaryHtml = `已套用【閉嘴】臨床預設值：<code>LAR_closed = ${cal.LAR_closed.toFixed(3)}</code> · <code>jawOpen_closed = ${cal.jawOpen_closed.toFixed(3)}</code> · <code>D_eye = ${cal.D_eye.toFixed(3)}</code>`;
     } else if (stepIdx === 2) {
       cal.LAR_open = DEFAULT_CALIB_BASELINES.LAR_open;
       cal.jawOpen_open = DEFAULT_CALIB_BASELINES.jawOpen_open;
+      cal.H_inner_open = DEFAULT_CALIB_BASELINES.H_inner_open;
+      cal.H_center_open = DEFAULT_CALIB_BASELINES.H_center_open;
       summaryHtml = `已套用【張大口】臨床預設值：<code>LAR_open = ${cal.LAR_open.toFixed(3)}</code> · <code>jawOpen_open = ${cal.jawOpen_open.toFixed(3)}</code>`;
     } else if (stepIdx === 3) {
       cal.LAR_plb = DEFAULT_CALIB_BASELINES.LAR_plb;
       cal.mouthPucker_plb = DEFAULT_CALIB_BASELINES.mouthPucker_plb;
       cal.mouthFunnel_plb = DEFAULT_CALIB_BASELINES.mouthFunnel_plb;
-      summaryHtml = `已套用【噘唇】臨床預設值：<code>LAR_plb = ${cal.LAR_plb.toFixed(3)}</code> · <code>Pucker = ${cal.mouthPucker_plb.toFixed(2)}</code> · <code>Funnel = ${cal.mouthFunnel_plb.toFixed(2)}</code>`;
+      cal.W_outer_plb = DEFAULT_CALIB_BASELINES.W_outer_plb;
+      cal.MWR_plb = DEFAULT_CALIB_BASELINES.MWR_plb;
+      cal.OLAR_plb = DEFAULT_CALIB_BASELINES.OLAR_plb;
+      summaryHtml = `已套用【噘唇】臨床預設值：<code>LAR_plb = ${cal.LAR_plb.toFixed(3)}</code> · <code>MWR_plb = ${cal.MWR_plb.toFixed(2)}</code> · <code>Pucker = ${cal.mouthPucker_plb.toFixed(2)}</code>`;
     } else if (stepIdx === 4) {
       cal.Dist_shrug = DEFAULT_CALIB_BASELINES.Dist_shrug;
       summaryHtml = `已套用【縮膊頭】臨床預設值：<code>Dist_shrug = ${cal.Dist_shrug.toFixed(3)}</code>`;
@@ -339,7 +383,6 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
       summaryHtml = `已套用【放鬆膊頭】臨床預設值：<code>Dist_relax (Dist_base) = ${cal.Dist_relax.toFixed(3)}</code> · <code>yShoulderBase = ${cal.yShoulderBase.toFixed(3)}</code>`;
     }
 
-    // 點擊「⏭️ 使用預設值並跳至下一步」時直接推進至下一步或總結面板
     if (useDefaultFallback) {
       showToast(`⏭️ 第 ${stepIdx} 步已採用臨床預設值`);
       advanceToNextCalibrationStepOrSummary();
@@ -355,16 +398,31 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
       cal.D_eye = clampVal(computeTrimmedMean(samples.dEye, DEFAULT_CALIB_BASELINES.D_eye), 0.08, 0.45);
       cal.dEyeBase = cal.D_eye;
       cal.larRest = cal.LAR_closed;
-      summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>LAR_closed = ${cal.LAR_closed.toFixed(3)}</code> · <code>jawOpen_closed = ${cal.jawOpen_closed.toFixed(3)}</code> · <code>D_eye = ${cal.D_eye.toFixed(3)}</code>`;
+
+      // v10: 採集三柱穩健閉嘴基準 H_inner_closed、中柱專屬閉嘴基準 H_center_closed、外嘴闊 W_outer_closed 與外唇圓潤比 OLAR_closed
+      cal.H_inner_closed = clampVal(computeTrimmedMean(samples.hInner, DEFAULT_CALIB_BASELINES.H_inner_closed), 0.005, 0.065);
+      cal.H_center_closed = clampVal(computeTrimmedMean(samples.hCenter, DEFAULT_CALIB_BASELINES.H_center_closed), 0.005, 0.070);
+      cal.W_outer_closed = clampVal(computeTrimmedMean(samples.wOuter, DEFAULT_CALIB_BASELINES.W_outer_closed), 0.25, 0.72);
+      cal.OLAR_closed = clampVal(computeTrimmedMean(samples.olar, DEFAULT_CALIB_BASELINES.OLAR_closed), 0.12, 0.45);
+      cal.pitchRatio_closed = clampVal(computeTrimmedMean(samples.pitchRatio, DEFAULT_CALIB_BASELINES.pitchRatio_closed), 0.40, 1.30);
+      cal.zProtrusion_closed = clampVal(computeTrimmedMean(samples.zProtrusion, DEFAULT_CALIB_BASELINES.zProtrusion_closed), -0.05, 0.08);
+      summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>LAR_closed = ${cal.LAR_closed.toFixed(3)}</code> · <code>W_outer = ${cal.W_outer_closed.toFixed(3)}</code> · <code>D_eye = ${cal.D_eye.toFixed(3)}</code>`;
     } else if (stepIdx === 2) {
       cal.LAR_open = clampVal(computeTrimmedMean(samples.lar, DEFAULT_CALIB_BASELINES.LAR_open), Math.max(0.15, cal.LAR_closed + 0.10), 0.75);
       cal.jawOpen_open = clampVal(computeTrimmedMean(samples.jawOpen, DEFAULT_CALIB_BASELINES.jawOpen_open), Math.max(0.15, cal.jawOpen_closed + 0.10), 0.95);
+      cal.H_inner_open = clampVal(computeTrimmedMean(samples.hInner, DEFAULT_CALIB_BASELINES.H_inner_open), Math.max(0.08, cal.H_inner_closed + 0.06), 0.45);
+      cal.H_center_open = clampVal(computeTrimmedMean(samples.hCenter, DEFAULT_CALIB_BASELINES.H_center_open), Math.max(0.09, cal.H_center_closed + 0.06), 0.48);
       summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>LAR_open = ${cal.LAR_open.toFixed(3)}</code> · <code>jawOpen_open = ${cal.jawOpen_open.toFixed(3)}</code>`;
     } else if (stepIdx === 3) {
       cal.LAR_plb = clampVal(computeTrimmedMean(samples.lar, DEFAULT_CALIB_BASELINES.LAR_plb), 0.04, 0.25);
       cal.mouthPucker_plb = clampVal(computeTrimmedMean(samples.mouthPucker, DEFAULT_CALIB_BASELINES.mouthPucker_plb), 0.25, 0.95);
       cal.mouthFunnel_plb = clampVal(computeTrimmedMean(samples.mouthFunnel, DEFAULT_CALIB_BASELINES.mouthFunnel_plb), 0.20, 0.95);
-      summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>LAR_plb = ${cal.LAR_plb.toFixed(3)}</code> · <code>mouthPucker_plb = ${cal.mouthPucker_plb.toFixed(2)}</code> · <code>mouthFunnel_plb = ${cal.mouthFunnel_plb.toFixed(2)}</code>`;
+
+      const wClosedSafe = Math.max(cal.W_outer_closed, 0.20);
+      cal.W_outer_plb = clampVal(computeTrimmedMean(samples.wOuter, DEFAULT_CALIB_BASELINES.W_outer_plb), 0.18, wClosedSafe * 0.96);
+      cal.MWR_plb = clampVal(roundTo(cal.W_outer_plb / wClosedSafe, 3), 0.65, 0.94);
+      cal.OLAR_plb = clampVal(computeTrimmedMean(samples.olar, DEFAULT_CALIB_BASELINES.OLAR_plb), Math.max(0.18, cal.OLAR_closed * 1.08), 0.75);
+      summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>LAR_plb = ${cal.LAR_plb.toFixed(3)}</code> · <code>MWR_plb = ${cal.MWR_plb.toFixed(2)}</code> · <code>Pucker = ${cal.mouthPucker_plb.toFixed(2)}</code>`;
     } else if (stepIdx === 4) {
       cal.Dist_shrug = clampVal(computeTrimmedMean(samples.distEarShoulder, DEFAULT_CALIB_BASELINES.Dist_shrug), 0.10, 0.45);
       if (samples.dEye.length > 0 && cal.stepSource[1] === 'default') {
@@ -374,7 +432,6 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
       summaryHtml = `✅ 採集成功 (${sampleCount} 幀去極端值平均)：<br><code>聳肩耳肩距離 Dist_shrug = ${cal.Dist_shrug.toFixed(3)}</code>`;
     } else if (stepIdx === 5) {
       cal.Dist_relax = clampVal(computeTrimmedMean(samples.distEarShoulder, DEFAULT_CALIB_BASELINES.Dist_relax), 0.14, 0.52);
-      // 確保放鬆耳肩距離大於聳肩耳肩距離至少 0.025，防止倒置
       if (cal.Dist_relax <= cal.Dist_shrug + 0.02) {
         cal.Dist_relax = roundTo(cal.Dist_shrug + 0.05, 3);
       }
@@ -394,13 +451,11 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
   if (dom.calibStepStateLabel) {
     dom.calibStepStateLabel.textContent = `第 ${stepIdx} 步採集完成！請點擊左側視訊畫面中央「下一步」繼續，或點擊下方重測`;
   }
-  // 採集完成後不顯示額外之「採集成功」綠底標籤框，確保右側面板高度固定不變
   if (dom.calibStepResultBox) {
     dom.calibStepResultBox.innerHTML = '';
     dom.calibStepResultBox.classList.add('hidden');
   }
 
-  // 重新模糊視訊畫面，並於視訊正前方顯示綠色「下一步」按鈕
   if (dom.calibVideoOverlay) {
     dom.calibVideoOverlay.classList.remove('hidden');
   }
@@ -431,8 +486,7 @@ export function advanceToNextCalibrationStepOrSummary() {
 
 /**
  * 【B.3 個人化動態閾值自動計算與同步 (Dynamic Threshold Computation)】
- * 利用五步實測數據自動計算並更新全域 THRESHOLDS（含安全上下限 Clamping），
- * 並同步更新至右側 Debug Drawer 滑桿與數值顯示。
+ * 利用五步實測數據自動計算並更新全域 THRESHOLDS（含 v10 統一 MWR 70% 努力折扣公式與安全上下限 Clamping）
  */
 export function computeAndSyncDynamicThresholds() {
   const cal = AppState.calibration;
@@ -445,21 +499,46 @@ export function computeAndSyncDynamicThresholds() {
   const jawOpenMax = Math.max(cal.jawOpen_open, jawClosed + 0.12);
   const jawRange = jawOpenMax - jawClosed;
 
-  // 1. 吸氣閉口上限 (larInhaleMax & jawOpenInhaleMax)：基於【閉嘴】與【張大口】個人範圍動態設定
+  // 1. 吸氣閉口上限 (larInhaleMax, jawOpenInhaleMax, noiInhalePassMax = 0.22)
   THRESHOLDS.larInhaleMax = clampVal(roundTo(larClosed + Math.max(0.02, larRange * 0.08), 2), 0.04, 0.12);
   THRESHOLDS.jawOpenInhaleMax = clampVal(roundTo(jawClosed + Math.max(0.02, jawRange * 0.09), 2), 0.03, 0.12);
   THRESHOLDS.larInhaleErr = clampVal(roundTo(THRESHOLDS.larInhaleMax + 0.02, 2), 0.06, 0.15);
+  THRESHOLDS.noiInhalePassMax = 0.22;
+  THRESHOLDS.noiInhaleZeroMax = 0.38;
 
-  // 2. 呼氣張大口錯誤閾值 (larExhaleWideErr)：基於【閉嘴】與【張大口】插值設定 (70% 處)
+  // 2. 呼氣張大口錯誤閾值 (larExhaleWideErr & noiExhaleWideErr = 0.55)
   THRESHOLDS.larExhaleWideErr = clampVal(roundTo(larClosed + larRange * 0.70, 2), 0.18, 0.40);
+  THRESHOLDS.noiExhaleMin = 0.025;
+  THRESHOLDS.noiExhaleMax = 0.42;
+  THRESHOLDS.noiExhaleWideErr = 0.55;
 
-  // 3. 呼氣噘唇達標閾值 (mouthPuckerMin, mouthFunnelMin, larExhaleMin/Max)：
-  // 【C.6 解決峰值努力陷阱 Peak Effort Trap】將 mouthPucker 訓練閾值固定設為 3 秒校準峰值之 70% (0.70)
+  // 3. 呼氣噘唇達標閾值 (統一 70% 峰值努力折扣公式：mwrExhaleTarget 範圍 [0.82, 0.92]，預設 0.88)
   const effortDiscount = THRESHOLDS.puckerPeakEffortDiscount || 0.70;
   THRESHOLDS.mouthPuckerMin = clampVal(roundTo(cal.mouthPucker_plb * effortDiscount, 2), 0.15, 0.70);
   THRESHOLDS.mouthFunnelMin = clampVal(roundTo(cal.mouthFunnel_plb * effortDiscount, 2), 0.15, 0.60);
   THRESHOLDS.larExhaleMin = clampVal(roundTo(Math.min(larClosed + 0.005, cal.LAR_plb * 0.35), 2), 0.02, 0.08);
   THRESHOLDS.larExhaleMax = clampVal(roundTo(Math.min(THRESHOLDS.larExhaleWideErr - 0.02, Math.max(cal.LAR_plb * 1.9, 0.18)), 2), 0.14, 0.35);
+
+  const mwrPlbSafe = clampVal(cal.MWR_plb ?? DEFAULT_CALIB_BASELINES.MWR_plb, 0.65, 0.94);
+  THRESHOLDS.mwrExhaleTarget = clampVal(
+    roundTo(1.0 - (1.0 - mwrPlbSafe) * effortDiscount, 2),
+    0.82,
+    0.92
+  );
+  THRESHOLDS.mwrExhaleHold = clampVal(
+    roundTo(THRESHOLDS.mwrExhaleTarget + 0.03, 2),
+    0.85,
+    0.94
+  );
+  THRESHOLDS.mwrExhaleMax = 0.97;
+
+  const rawOlarRatio = (cal.OLAR_plb ?? DEFAULT_CALIB_BASELINES.OLAR_plb) /
+                       Math.max(cal.OLAR_closed ?? DEFAULT_CALIB_BASELINES.OLAR_closed, 0.12);
+  THRESHOLDS.olarRatioTarget = clampVal(
+    roundTo(1.0 + Math.max(0.12, (rawOlarRatio - 1.0) * effortDiscount), 2),
+    1.12,
+    1.35
+  );
 
   // 4. 起肩代償警告閾值 (shoulderHikeWarn)：基於【放鬆膊頭】與【縮膊頭】耳肩距離差 ΔY_max 之 40%
   const dEyeSafe = Math.max(cal.D_eye, 0.08);
@@ -528,7 +607,7 @@ export function showCalibrationConfirmation() {
         <div class="flex flex-wrap items-center justify-between gap-1 bg-white p-2 rounded-xl border border-slate-200">
           <div>
             <span class="font-bold text-slate-800">1. 【閉嘴】</span>
-            <span class="text-slate-600 ml-1">LAR_closed: <b>${cal.LAR_closed.toFixed(3)}</b> · jawOpen: <b>${cal.jawOpen_closed.toFixed(3)}</b> · D_eye: <b>${cal.D_eye.toFixed(3)}</b></span>
+            <span class="text-slate-600 ml-1">LAR_closed: <b>${cal.LAR_closed.toFixed(3)}</b> · W_outer: <b>${cal.W_outer_closed.toFixed(3)}</b> · D_eye: <b>${cal.D_eye.toFixed(3)}</b></span>
           </div>
           <div class="flex items-center gap-1.5">
             ${badgeHtml(1)}
@@ -548,7 +627,7 @@ export function showCalibrationConfirmation() {
         <div class="flex flex-wrap items-center justify-between gap-1 bg-white p-2 rounded-xl border border-slate-200">
           <div>
             <span class="font-bold text-slate-800">3. 【噘唇】</span>
-            <span class="text-slate-600 ml-1">LAR_plb: <b>${cal.LAR_plb.toFixed(3)}</b> · Pucker: <b>${cal.mouthPucker_plb.toFixed(2)}</b> · Funnel: <b>${cal.mouthFunnel_plb.toFixed(2)}</b></span>
+            <span class="text-slate-600 ml-1">MWR_plb: <b>${cal.MWR_plb.toFixed(2)}</b> · OLAR: <b>${cal.OLAR_plb.toFixed(2)}</b> · Pucker: <b>${cal.mouthPucker_plb.toFixed(2)}</b></span>
           </div>
           <div class="flex items-center gap-1.5">
             ${badgeHtml(3)}
@@ -578,7 +657,6 @@ export function showCalibrationConfirmation() {
       </div>
     `;
 
-    // 綁定單步重測按鈕
     const retestBtns = dom.calibSummaryMetrics.querySelectorAll('.btn-retest-single');
     retestBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -593,16 +671,16 @@ export function showCalibrationConfirmation() {
     dom.calibSummaryThresholds.innerHTML = `
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-left text-[11px] font-mono">
         <div class="bg-teal-50/70 p-2 rounded-lg border border-teal-200">
-          <span class="text-slate-500 block">吸氣閉口上限</span>
-          <span class="font-extrabold text-[#2E7D32]">LAR ≤ ${THRESHOLDS.larInhaleMax.toFixed(2)} | Jaw &lt; ${THRESHOLDS.jawOpenInhaleMax.toFixed(2)}</span>
+          <span class="text-slate-500 block">吸氣閉口寬容區 (NOI)</span>
+          <span class="font-extrabold text-[#2E7D32]">NOI ≤ ${(THRESHOLDS.noiInhalePassMax * 100).toFixed(0)}% | Jaw &lt; ${THRESHOLDS.jawOpenInhaleMax.toFixed(2)}</span>
         </div>
         <div class="bg-teal-50/70 p-2 rounded-lg border border-teal-200">
-          <span class="text-slate-500 block">呼氣噘唇達標閾值 (70% 努力折扣)</span>
-          <span class="font-extrabold text-[#2E7D32]">Pucker ≥ ${THRESHOLDS.mouthPuckerMin.toFixed(2)} | Funnel ≥ ${THRESHOLDS.mouthFunnelMin.toFixed(2)}</span>
+          <span class="text-slate-500 block">呼氣圓唇縮寬目標 (MWR / OLAR)</span>
+          <span class="font-extrabold text-[#2E7D32]">MWR ≤ ${THRESHOLDS.mwrExhaleTarget.toFixed(2)} | OLAR ≥ ${THRESHOLDS.olarRatioTarget.toFixed(2)}x</span>
         </div>
         <div class="bg-teal-50/70 p-2 rounded-lg border border-teal-200">
-          <span class="text-slate-500 block">呼氣 LAR 範圍 / 張口錯誤</span>
-          <span class="font-extrabold text-teal-900">${THRESHOLDS.larExhaleMin.toFixed(2)}–${THRESHOLDS.larExhaleMax.toFixed(2)} (錯誤 &gt; ${THRESHOLDS.larExhaleWideErr.toFixed(2)})</span>
+          <span class="text-slate-500 block">呼氣氣孔守門員 / 張口錯誤</span>
+          <span class="font-extrabold text-teal-900">NOI_c ${(THRESHOLDS.noiExhaleMin * 100).toFixed(1)}%–${(THRESHOLDS.noiExhaleMax * 100).toFixed(0)}% (錯誤 &gt; ${(THRESHOLDS.noiExhaleWideErr * 100).toFixed(0)}%)</span>
         </div>
         <div class="col-span-2 sm:col-span-3 bg-emerald-50/80 p-2 rounded-lg border border-emerald-200 flex justify-between items-center">
           <span class="text-slate-600 font-sans font-semibold">起肩代償警告閾值 (shoulderHikeWarn · 40% ΔY_max)</span>
@@ -653,13 +731,16 @@ export function calibFrameLoop() {
     let mouthFunnel = 0.10;
     let distEarShoulder = cal.Dist_relax;
     let yShoulderSmooth = cal.yShoulderBase;
+    let v10Geo = null;
 
     if (hasFace) {
       const face = faceResult.faceLandmarks[0];
-      dEye = calculateDEye(face);
+      const isSim = Boolean(faceResult.isSimulated || AppState.isDemoMode);
+      v10Geo = extractV10MouthAndPoseMetrics(face, cal, { isSimulated: isSim });
+      dEye = v10Geo.dEye;
       const larRaw = calculateLAR(face);
       const bs = extractBlendshapes(faceResult.faceBlendshapes);
-      const smoothedFace = smoothFacialSignalsEMA(larRaw, bs.jawOpen, bs.mouthPucker, bs.mouthFunnel);
+      const smoothedFace = smoothFacialSignalsEMA(larRaw, bs.jawOpen, bs.mouthPucker, bs.mouthFunnel, v10Geo, 0.033);
       lar = smoothedFace.larFiltered;
       jawOpen = smoothedFace.jawOpenFiltered;
       mouthPucker = smoothedFace.mouthPuckerFiltered;
@@ -674,6 +755,17 @@ export function calibFrameLoop() {
       AppState.currentMetrics.mouthPucker = mouthPucker;
       AppState.currentMetrics.mouthFunnelRaw = bs.mouthFunnel;
       AppState.currentMetrics.mouthFunnel = mouthFunnel;
+      AppState.currentMetrics.hInner = smoothedFace.hInnerFiltered;
+      AppState.currentMetrics.hCenter = smoothedFace.hCenterFiltered;
+      AppState.currentMetrics.wOuter = smoothedFace.wOuterFiltered;
+      AppState.currentMetrics.olar = smoothedFace.olarFiltered;
+      AppState.currentMetrics.noi = smoothedFace.noiFiltered;
+      AppState.currentMetrics.noiCenter = smoothedFace.noiCenterFiltered;
+      AppState.currentMetrics.mwr = smoothedFace.mwrFiltered;
+      AppState.currentMetrics.olarRatio = smoothedFace.olarRatioFiltered;
+      AppState.currentMetrics.yawDeg = v10Geo.yawDeg;
+      AppState.currentMetrics.pitchDeg = v10Geo.pitchDeg;
+      AppState.currentMetrics.validCols = v10Geo.validCols;
       AppState.currentMetrics.deltaLar = smoothedFace.deltaLar;
       AppState.currentMetrics.deltaJawOpen = smoothedFace.deltaJawOpen;
       AppState.currentMetrics.deltaMouthPucker = smoothedFace.deltaMouthPucker;
@@ -705,6 +797,14 @@ export function calibFrameLoop() {
         cal.stepSamples.jawOpen.push(jawOpen);
         cal.stepSamples.mouthPucker.push(mouthPucker);
         cal.stepSamples.mouthFunnel.push(mouthFunnel);
+        if (v10Geo && v10Geo.validCols >= 1) {
+          cal.stepSamples.hInner.push(AppState.currentMetrics.hInner);
+          cal.stepSamples.hCenter.push(AppState.currentMetrics.hCenter);
+          cal.stepSamples.wOuter.push(AppState.currentMetrics.wOuter);
+          cal.stepSamples.olar.push(AppState.currentMetrics.olar);
+          cal.stepSamples.pitchRatio.push(v10Geo.pitchRatio);
+          cal.stepSamples.zProtrusion.push(v10Geo.zProtrusion);
+        }
       }
       if (hasPose) {
         cal.stepSamples.distEarShoulder.push(distEarShoulder);
@@ -719,9 +819,9 @@ export function calibFrameLoop() {
       } else {
         const s = cal.currentStep;
         if (s === 1 || s === 2) {
-          dom.calibLiveReadout.textContent = `即時指標預覽 · LAR: ${lar.toFixed(3)} | jawOpen: ${jawOpen.toFixed(3)} | D_eye: ${dEye.toFixed(3)}`;
+          dom.calibLiveReadout.textContent = `即時指標預覽 · LAR: ${lar.toFixed(3)} | W_outer: ${AppState.currentMetrics.wOuter.toFixed(3)} | jawOpen: ${jawOpen.toFixed(3)} | D_eye: ${dEye.toFixed(3)}`;
         } else if (s === 3) {
-          dom.calibLiveReadout.textContent = `即時指標預覽 · LAR: ${lar.toFixed(3)} | Pucker: ${mouthPucker.toFixed(2)} | Funnel: ${mouthFunnel.toFixed(2)}`;
+          dom.calibLiveReadout.textContent = `即時指標預覽 · MWR(縮寬): ${AppState.currentMetrics.mwr.toFixed(2)} | OLAR(圓潤): ${AppState.currentMetrics.olar.toFixed(2)} | Pucker: ${mouthPucker.toFixed(2)}`;
         } else {
           dom.calibLiveReadout.textContent = `即時指標預覽 · 耳肩距離 Dist: ${distEarShoulder.toFixed(3)} | 雙肩高度 Y: ${yShoulderSmooth.toFixed(3)} | D_eye: ${dEye.toFixed(3)}`;
         }
@@ -763,7 +863,6 @@ export function renderCalibrationCanvas(detections) {
     const p11 = { x: pose[11].x * w, y: y11 * h };
     const p12 = { x: pose[12].x * w, y: y12 * h };
 
-    // 繪製耳肩相對基準連線 (Landmark 7->11, 8->12)
     if (pose[7] && pose[8]) {
       const p7 = { x: pose[7].x * w, y: pose[7].y * h };
       const p8 = { x: pose[8].x * w, y: pose[8].y * h };
@@ -810,24 +909,36 @@ export function renderCalibrationCanvas(detections) {
       });
     }
 
-    const lipPoints = [78, 13, 308, 14].map(idx => ({
-      x: face[idx].x * w,
-      y: face[idx].y * h
-    }));
+    // 繪製外唇環 (61-0-291-17) 與內唇環 (78-82-13-312-308-317-14-87)
+    const outerIndices = [61, 0, 291, 17];
+    const innerIndices = [78, 82, 13, 312, 308, 317, 14, 87];
     const isMouthStep = AppState.calibration.currentStep <= 3;
+
     ctx.save();
     ctx.strokeStyle = isMouthStep ? '#4DB6AC' : 'rgba(77, 182, 172, 0.75)';
-    ctx.fillStyle = isMouthStep ? 'rgba(77, 182, 172, 0.25)' : 'transparent';
-    ctx.lineWidth = isMouthStep ? 3.5 : 2.5;
-    ctx.beginPath();
-    ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
-    for (let i = 1; i < lipPoints.length; i++) {
-      ctx.lineTo(lipPoints[i].x, lipPoints[i].y);
+    ctx.fillStyle = isMouthStep ? 'rgba(77, 182, 172, 0.22)' : 'transparent';
+    ctx.lineWidth = isMouthStep ? 3.0 : 2.0;
+
+    if (face[61] && face[291] && face[0] && face[17]) {
+      ctx.beginPath();
+      outerIndices.forEach((idx, i) => {
+        const pt = face[idx];
+        if (i === 0) ctx.moveTo(pt.x * w, pt.y * h);
+        else ctx.lineTo(pt.x * w, pt.y * h);
+      });
+      ctx.closePath();
+      if (isMouthStep) ctx.fill();
+      ctx.stroke();
     }
+
+    ctx.beginPath();
+    innerIndices.forEach((idx, i) => {
+      const pt = face[idx] || face[13];
+      if (i === 0) ctx.moveTo(pt.x * w, pt.y * h);
+      else ctx.lineTo(pt.x * w, pt.y * h);
+    });
     ctx.closePath();
-    if (isMouthStep) ctx.fill();
     ctx.stroke();
     ctx.restore();
   }
 }
-
