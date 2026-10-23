@@ -908,7 +908,7 @@ export function triggerPhaseSwitch(newPhase) {
   } else {
     dom.pillPhase.textContent = "呼氣階段 (噘唇吹氣)";
     dom.pillPhase.className = "px-3.5 py-1.5 rounded-xl font-bold text-xs md:text-sm bg-[#FF7043] text-white shadow-sm";
-    speakText("慢慢噘唇呼氣", true);
+    speakText("呼氣", true);
   }
 
   renderIndicatorCards();
