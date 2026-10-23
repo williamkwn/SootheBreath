@@ -1,6 +1,6 @@
 /* ==========================================================================
    舒呼 (SootheBreath) — 實時呼吸視覺生物反饋系統 (style.css)
-   v10 Gentle Soothing Clinical UI Stylesheet (P0–P2 60 FPS 高效能 3D 互動模式優化版)
+   v10.1 Gentle Soothing Clinical UI Stylesheet (P0–P2 60 FPS 高效能 3D 互動模式優化版)
    ========================================================================== */
 
 :root {
@@ -193,10 +193,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none !important;
 }
 
-/* Calibration Video Box & Control Panel Non-Overlapping Containment */
+/* Calibration Video Box & Control Panel Non-Overlapping Containment (v10.1: No blur filter, auto-height control panel so buttons never clip) */
 #calib-step-workspace:not(.hidden) {
   display: grid;
-  align-items: start;
+  align-items: stretch;
 }
 
 #calib-video-box {
@@ -205,8 +205,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0 !important;
-  height: clamp(230px, 40vh, 360px) !important;
-  max-height: 42vh !important;
+  height: clamp(220px, 36vh, 330px) !important;
   background-color: #0f172a;
   border-radius: 1rem;
   z-index: 1 !important;
@@ -218,9 +217,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   position: relative !important;
   z-index: 20 !important;
   min-width: 0 !important;
-  height: clamp(230px, 40vh, 360px) !important;
-  max-height: 42vh !important;
-  overflow: hidden !important;
+  height: auto !important;
+  min-height: clamp(260px, 40vh, 360px) !important;
+  overflow: visible !important;
   box-sizing: border-box !important;
 }
 
@@ -232,8 +231,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 #calib-video-overlay:not(.hidden) {
   display: flex !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 #debug-backdrop {
@@ -286,19 +285,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* ==========================================================================
-   v10 3D Interactive Mode Styles (P1-1: Zero Real-Time CSS Blur Over WebGL)
+   v10.1 3D Interactive Mode Styles (Supports both 2-Column Mirror/Mesh & 1-Column Pure Guiding Mode)
    ========================================================================== */
 #interactive-3d-stage {
   position: relative;
   width: 100%;
   max-width: 48rem;
-  height: clamp(270px, 43vh, 430px);
+  height: clamp(210px, 34vh, 340px);
   border-radius: 1.5rem;
   overflow: hidden;
   box-shadow: 0 14px 36px -6px rgba(15, 23, 42, 0.22);
   border: 2px solid rgba(77, 182, 172, 0.35);
   contain: layout paint;
   isolation: isolate;
+}
+
+.pure-guiding-mode #interactive-3d-stage {
+  height: clamp(270px, 43vh, 430px);
 }
 
 #interactive-3d-stage.bg-pinwheel {

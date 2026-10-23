@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>舒呼(SootheBreath) 呼吸復康訓練 (v10)</title>
+  <title>舒呼(SootheBreath) 呼吸復康訓練 (v10.1)</title>
   
   <!-- PWA Settings -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4DB6AC">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v10">
+  <meta name="apple-mobile-web-app-title" content="舒呼(SootheBreath) 呼吸復康訓練 v10.1">
   
   <!-- Tailwind CSS Play CDN v3.4 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Three.js r128 for v10 3D Interactive Mode (Pinwheel & Dandelion) -->
+  <!-- Three.js r128 for v10.1 3D Interactive Mode (Pinwheel & Dandelion) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     if (typeof tailwind !== 'undefined') {
@@ -42,8 +42,8 @@
     }
   </script>
   
-  <!-- Style Sheet (with v=10.0 cache buster + inline critical styles) -->
-  <link rel="stylesheet" href="style.css?v=10.0">
+  <!-- Style Sheet (with v=10.1 cache buster + inline critical styles) -->
+  <link rel="stylesheet" href="style.css?v=10.1">
   <style>
 :root {
   --inhale-color: #4DB6AC;
@@ -78,20 +78,20 @@ html, body {
       <div>
         <h1 class="font-extrabold text-base md:text-lg text-slate-800 leading-tight flex items-center gap-2">
           舒呼(SootheBreath) 呼吸復康訓練
-          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v10</span>
+          <span class="hidden sm:inline-block text-xs px-2.5 py-0.5 rounded-full bg-[#4DB6AC]/15 text-teal-800 border border-[#4DB6AC]/30 font-bold">PWA v10.1</span>
         </h1>
       </div>
     </div>
 
-    <!-- Privacy & Debug Indicators -->
+    <!-- Privacy & Voice Indicators -->
     <div class="flex items-center space-x-2 md:space-x-3">
       <span class="hidden lg:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#2E7D32] border border-emerald-200">
         <span class="w-2 h-2 rounded-full bg-[#2E7D32] animate-pulse"></span>
         100% 本地端 AI 推論 (零影像上傳)
       </span>
-      <span class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200">
-        <span>🔊</span>
-        <span>廣東話 (zh-HK) 語音導航開啟</span>
+      <span id="header-voice-badge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200 cursor-pointer" title="點擊切換人聲語音導航">
+        <span id="header-voice-icon">🔊</span>
+        <span id="header-voice-text">廣東話 (zh-HK) 語音導航開啟</span>
       </span>
       <button id="btn-toggle-debug" type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 border border-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow-xs">
         <span>🛠️</span>
@@ -122,7 +122,7 @@ html, body {
           <div class="text-xl shrink-0 mt-0.5">🛡️</div>
           <div class="text-xs text-slate-600 leading-relaxed">
             <span class="font-bold text-[#2E7D32]">隱私設計保證 (Privacy-by-Design)：</span>
-            所有視訊幀僅於本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕不錄影、絕不上傳伺服器；支援「實時鏡像模式 Mirror Mode」、「去識別化骨架網格模式 Privacy Mesh Mode」、「純引導模式 Pure Guiding Mode」與「互動模式 Interactive Mode (風車 / 蒲公英)」。
+            所有視訊幀僅於本機瀏覽器 WebAssembly (WASM) 記憶體內即時計算，絕不錄影、絕不上傳伺服器；支援「實時鏡像模式 Mirror Mode」、「去識別化骨架網格模式 Privacy Mesh Mode」與「純引導模式 Pure Guiding Mode」，並可搭配氣球、真人示範或 3D 互動模式 (風車 / 蒲公英)。
           </div>
         </div>
 
@@ -187,12 +187,22 @@ html, body {
             </div>
           </div>
 
-          <!-- Card B: 顯示模式 (含 v10 互動模式選擇) -->
+          <!-- Card B: 顯示模式 (v10.1: 相機顯示模式置於呼吸引導顯示模式上方，並移除相機顯示模式中之重複互動模式選項) -->
           <div class="bg-[#f8fbfd] p-4 md:p-5 rounded-2xl border border-slate-200/90 space-y-4 flex flex-col justify-start">
             <div class="space-y-4">
               <label class="text-sm font-extrabold text-slate-800 block">顯示模式</label>
 
-              <!-- Display Mode: Balloon vs Human vs Interactive Mode -->
+              <!-- 1. Camera Display Mode Selector (Placed above 呼吸引導顯示模式 per v10.1 1b & 1c) -->
+              <div class="space-y-1.5">
+                <span class="text-xs text-slate-600 font-medium block">相機顯示模式：</span>
+                <select id="select-privacy-mode" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
+                  <option value="mirror">實時鏡像模式 Mirror Mode</option>
+                  <option value="privacy_mesh" selected>去識別化骨架網格模式 Privacy Mesh Mode</option>
+                  <option value="minimalist">純引導模式 Pure Guiding Mode</option>
+                </select>
+              </div>
+
+              <!-- 2. Guiding Display Mode: Balloon vs Human vs Interactive Mode -->
               <div class="space-y-1.5">
                 <span class="text-xs text-slate-600 font-medium block">呼吸引導顯示模式：</span>
                 <div class="flex flex-wrap gap-2">
@@ -211,7 +221,7 @@ html, body {
                 </div>
               </div>
 
-              <!-- v10 Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
+              <!-- Interactive Mode 3D Object Selection (Pinwheel / Dandelion) -->
               <div id="wrapper-interactive-object" class="hidden space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80">
                 <span class="text-xs text-amber-900 font-semibold block">互動模式 3D 主題選擇 (風車 / 蒲公英)：</span>
                 <div class="flex gap-2">
@@ -219,35 +229,30 @@ html, body {
                   <button id="btn-interactive-dandelion" type="button" class="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer">🌼 蒲公英 Dandelion</button>
                 </div>
               </div>
-
-              <!-- Camera Display Mode Selector -->
-              <div class="space-y-1.5">
-                <span class="text-xs text-slate-600 font-medium block">相機顯示模式：</span>
-                <select id="select-privacy-mode" class="w-full bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-xl p-2.5 focus:ring-2 focus:ring-[#4DB6AC] focus:outline-none cursor-pointer">
-                  <option value="mirror">實時鏡像模式 Mirror Mode</option>
-                  <option value="privacy_mesh" selected>去識別化骨架網格模式 Privacy Mesh Mode</option>
-                  <option value="minimalist">純引導模式 Pure Guiding Mode</option>
-                  <option value="interactive">互動模式 Interactive Mode (風車 / 蒲公英)</option>
-                </select>
-              </div>
             </div>
           </div>
         </div>
 
-        <!-- Primary & Demo Action Buttons -->
-        <div class="space-y-2 pt-1">
+        <!-- Primary, Continue with Last Setting & Demo Action Buttons -->
+        <div class="space-y-2.5 pt-1">
           <button id="btn-start" type="button" class="w-full py-3.5 px-6 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-base md:text-lg shadow-lg shadow-emerald-900/20 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            開始練習 (進入五步個人化基準校準)
+            準備練習 (進入個人化校準)
+          </button>
+
+          <!-- v10.1 (1a): Continue with last calibration setting without re-calibration -->
+          <button id="btn-continue-last-calib" type="button" class="w-full py-3 px-6 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-900 border-2 border-[#4DB6AC]/70 font-extrabold text-sm md:text-base shadow-sm transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer">
+            <span>⚡</span>
+            <span id="label-continue-last-calib">繼續使用上次校準設定練習 (免重新校準)</span>
           </button>
 
           <div class="flex justify-center">
             <button id="btn-start-demo" type="button" class="px-4 py-1.5 rounded-xl text-xs font-semibold text-teal-800 hover:bg-teal-100/70 transition cursor-pointer flex items-center gap-1.5">
               <span>🧪</span>
-              <span>免鏡頭互動模擬預覽 (無相機時測試五步個人化校準、3D 互動模式與報表)</span>
+              <span>免鏡頭預覽 (略過校準直接進入訓練頁測試)</span>
             </button>
           </div>
         </div>
@@ -290,66 +295,68 @@ html, body {
           </div>
         </div>
 
-        <!-- Workspace A: Active 5-Step Capture View (Camera Preview + Therapist Controls) -->
-        <div id="calib-step-workspace" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+        <!-- Workspace A: Active 5-Step Capture View (Clear Camera Preview + Bottom Confirm Button + Therapist Controls) -->
+        <div id="calib-step-workspace" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
           
-          <!-- Left (7 cols): Live Camera / Skeleton & Lip Preview + Blur Overlay with Green Action Buttons -->
-          <div id="calib-video-box" class="md:col-span-6 lg:col-span-7 w-full min-w-0 max-w-full relative bg-slate-900 rounded-2xl overflow-hidden border-2 border-teal-200 shadow-lg flex items-center justify-center isolate z-0">
-            <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
-            <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
+          <!-- Left (7 cols): Clear Webcam Panel + Green Action Button Relocated to Bottom of Webcam Panel (v10.1 Req 2) -->
+          <div class="md:col-span-6 lg:col-span-7 w-full min-w-0 flex flex-col gap-2.5 justify-between bg-[#f8fbfd] p-3 rounded-2xl border border-teal-100 shadow-sm">
+            <div id="calib-video-box" class="w-full min-w-0 max-w-full relative bg-slate-900 rounded-2xl overflow-hidden border-2 border-teal-200 shadow-md flex items-center justify-center isolate z-0">
+              <video id="calib-video" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100" playsinline muted></video>
+              <canvas id="calib-canvas" class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-10"></canvas>
 
-            <!-- Top-Right Step Capture Status Pill -->
-            <div class="absolute top-3 right-3 z-20">
-              <div id="calib-status-pill" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/90 text-white shadow">
-                ⏳ 步驟 1/5：等待治療師確認開始
+              <!-- Top-Right Step Capture Status Pill -->
+              <div class="absolute top-3 right-3 z-20">
+                <div id="calib-status-pill" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/90 text-white shadow">
+                  ⏳ 步驟 1/5：等待治療師確認開始
+                </div>
+              </div>
+
+              <!-- Semi-transparent Alignment Silhouette Box (No blur filter so user sees face clearly) -->
+              <div class="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center border-2 border-dashed border-[#4DB6AC]/55 rounded-2xl m-4">
+                <div class="w-32 h-40 md:w-36 md:h-44 rounded-[50%] border-2 border-[#4DB6AC]/70 mb-1.5 bg-[#4DB6AC]/5"></div>
+                <div class="w-56 md:w-64 h-8 border-t-2 border-x-2 border-[#4DB6AC]/70 rounded-t-3xl bg-[#4DB6AC]/5"></div>
+              </div>
+
+              <!-- Bottom Live Key Metrics Readout Bar -->
+              <div id="calib-live-readout" class="absolute bottom-2.5 left-2.5 right-2.5 z-20 px-3 py-1.5 rounded-xl bg-slate-950/80 text-teal-200 font-mono text-xs font-bold border border-teal-500/30 text-center truncate">
+                即時指標預覽 · LAR: 0.035 | jawOpen: 0.015 | D_eye: 0.220
               </div>
             </div>
 
-            <!-- Semi-transparent Alignment Silhouette Box -->
-            <div class="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center border-2 border-dashed border-[#4DB6AC]/55 rounded-2xl m-4">
-              <div class="w-32 h-40 md:w-36 md:h-44 rounded-[50%] border-2 border-[#4DB6AC]/70 mb-1.5 bg-[#4DB6AC]/5"></div>
-              <div class="w-56 md:w-64 h-8 border-t-2 border-x-2 border-[#4DB6AC]/70 rounded-t-3xl bg-[#4DB6AC]/5"></div>
-            </div>
-
-            <!-- Blur Layer & Primary Green Action Buttons in Front of Webcam Screen -->
-            <div id="calib-video-overlay" class="absolute inset-0 z-30 bg-slate-900/50 backdrop-blur-md flex flex-col items-center justify-center p-6 transition-all duration-200">
-              <button id="btn-calib-confirm-step" type="button" class="py-3.5 px-7 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-xl transition transform active:scale-95 cursor-pointer">
+            <!-- Relocated Green Action Button at Bottom of Webcam Panel (Zero Blur Filter) -->
+            <div id="calib-video-overlay" class="w-full min-h-[48px] flex flex-col items-center justify-center">
+              <button id="btn-calib-confirm-step" type="button" class="w-full py-3 px-6 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-md transition transform active:scale-[0.99] cursor-pointer">
                 ✅ 確定開始採集此動作 (3 秒倒數)
               </button>
-              <button id="btn-calib-next-step" type="button" class="hidden py-3.5 px-7 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-xl transition transform active:scale-95 cursor-pointer">
+              <button id="btn-calib-next-step" type="button" class="hidden w-full py-3 px-6 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-extrabold text-sm md:text-base shadow-md transition transform active:scale-[0.99] cursor-pointer">
                 ➡️ 下一步
               </button>
             </div>
-
-            <!-- Bottom Live Key Metrics Readout Bar -->
-            <div id="calib-live-readout" class="absolute bottom-3 left-3 right-3 z-20 px-3.5 py-2 rounded-xl bg-slate-950/85 text-teal-200 font-mono text-xs font-bold border border-teal-500/30 backdrop-blur text-center truncate">
-              即時指標預覽 · LAR: 0.035 | jawOpen: 0.015 | D_eye: 0.220
-            </div>
           </div>
 
-          <!-- Right (5 cols): Fixed-Size Therapist Guidance & Countdown Panel -->
-          <div id="calib-control-panel" class="md:col-span-6 lg:col-span-5 w-full min-w-0 relative z-20 bg-[#f8fbfd] rounded-2xl border border-slate-200 p-4 md:p-5 flex flex-col justify-between shadow-sm">
+          <!-- Right (5 cols): Therapist Guidance & Countdown Panel (Auto-fitting height so default button never overflows) -->
+          <div id="calib-control-panel" class="md:col-span-6 lg:col-span-5 w-full min-w-0 relative z-20 bg-[#f8fbfd] rounded-2xl border border-slate-200 p-4 md:p-5 flex flex-col justify-between gap-3 shadow-sm">
             <div class="space-y-2">
               <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
                 🩺 治療師引導與確認面板
               </div>
-              <h3 id="calib-title" class="text-base md:text-lg font-extrabold text-slate-800 leading-snug truncate">
+              <h3 id="calib-title" class="text-base md:text-lg font-extrabold text-slate-800 leading-snug">
                 第 1 步【閉嘴】：自然閉上嘴巴
               </h3>
-              <p id="calib-subtitle" class="text-xs text-slate-600 leading-relaxed line-clamp-2 min-h-[2.25rem]">
+              <p id="calib-subtitle" class="text-xs text-slate-600 leading-relaxed">
                 請指導病人自然坐直、閉上嘴巴，面部正對鏡頭，系統將採集個人閉口基準與雙眼間距。
               </p>
               <div id="calib-target-metrics-desc" class="text-[11px] font-mono bg-white p-2 rounded-xl border border-slate-200 text-slate-600 truncate">
                 採集指標：個人閉口嘴唇比 (LAR_closed)、下頜閉合基準 (jawOpen_closed)、雙眼間距 (D_eye)
               </div>
 
-              <!-- Fixed-Height Countdown / Status Box -->
-              <div class="bg-white rounded-2xl border border-teal-100 px-3 py-2.5 text-center h-[108px] flex flex-col items-center justify-between shadow-2xs overflow-hidden">
-                <div id="calib-countdown" class="text-2xl md:text-3xl font-black text-teal-800 leading-none h-10 flex items-center justify-center">
+              <!-- Countdown / Status Box -->
+              <div class="bg-white rounded-2xl border border-teal-100 px-3 py-2.5 text-center min-h-[96px] flex flex-col items-center justify-between gap-1.5 shadow-2xs">
+                <div id="calib-countdown" class="text-2xl md:text-3xl font-black text-teal-800 leading-none h-9 flex items-center justify-center">
                   等待確認
                 </div>
-                <p id="calib-step-state-label" class="text-[11px] text-slate-500 font-medium leading-tight line-clamp-1">
-                  請指導病人擺好【閉嘴】動作，點擊左側視訊畫面中央綠色按鈕開始 3 秒採集
+                <p id="calib-step-state-label" class="text-[11px] text-slate-500 font-medium leading-tight">
+                  請指導病人擺好【閉嘴】動作，點擊左側視訊面板下方綠色按鈕開始 3 秒採集
                 </p>
                 <div id="calib-step-timer-bar-wrap" class="invisible w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200 shrink-0">
                   <div id="calib-step-timer-bar" class="h-full bg-[#FF7043] transition-all duration-100" style="width: 0%;"></div>
@@ -358,18 +365,18 @@ html, body {
               </div>
             </div>
 
-            <!-- Secondary Therapist Action Buttons -->
-            <div class="space-y-1.5 pt-1 shrink-0">
+            <!-- Secondary Therapist Action Buttons (Always visible at bottom of control panel) -->
+            <div class="space-y-2 pt-1 shrink-0">
               <div class="flex gap-2">
-                <button id="btn-calib-retest-step" type="button" class="hidden flex-1 py-1.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
+                <button id="btn-calib-retest-step" type="button" class="hidden flex-1 py-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 transition cursor-pointer">
                   🔄 重測此動作
                 </button>
-                <button id="btn-calib-prev-step" type="button" class="hidden flex-1 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer">
+                <button id="btn-calib-prev-step" type="button" class="hidden flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition cursor-pointer">
                   ⬅️ 返回上一步
                 </button>
               </div>
 
-              <button id="btn-calib-use-default" type="button" class="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition cursor-pointer">
+              <button id="btn-calib-use-default" type="button" class="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 transition cursor-pointer shadow-2xs">
                 ⏭️ 使用預設值並跳至下一步
               </button>
             </div>
@@ -422,7 +429,7 @@ html, body {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (含 v10 60 FPS 高效能 3D 互動模式) -->
+    <!-- 3. STATE_TRAINING: 實時訓練主畫面 (支援視訊/骨架網格與 3D 互動模式同屏) -->
     <!-- ========================================================================= -->
     <div id="state-training" class="hidden flex-1 flex flex-col overflow-hidden relative bg-[#f5fafd]">
 
@@ -445,13 +452,13 @@ html, body {
           </div>
         </div>
 
-        <!-- Right Mode Switcher + Human/Balloon/Interactive Switcher + 🔄 重校準 -->
+        <!-- Right Camera Mode Switcher + Guiding Mode Switcher + 🔊 人聲靜音 + 🔄 重校準 -->
         <div class="flex flex-wrap items-center gap-1.5">
           <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button id="btn-mode-mirror" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">實時鏡像模式 Mirror Mode</button>
             <button id="btn-mode-mesh" type="button" class="px-2 py-1 rounded-lg text-xs font-bold bg-[#4DB6AC] text-white shadow-xs transition cursor-pointer">去識別化骨架網格模式 Privacy Mesh Mode</button>
             <button id="btn-mode-minimal" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">純引導模式 Pure Guiding Mode</button>
-            <button id="btn-mode-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式 Interactive Mode</button>
+            <button id="btn-mode-interactive" type="button" class="hidden">🎡 互動模式 Interactive Mode</button>
           </div>
 
           <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
@@ -460,6 +467,12 @@ html, body {
             <button id="btn-train-female" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">👩 女性</button>
             <button id="btn-train-interactive" type="button" class="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">🎡 互動模式</button>
           </div>
+
+          <!-- v10.1 (4a): Button to mute/unmute human voice (人聲) -->
+          <button id="btn-toggle-voice" type="button" class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1">
+            <span id="icon-voice-toggle">🔊</span>
+            <span id="label-voice-toggle">人聲：開啟</span>
+          </button>
 
           <button id="btn-train-recalibrate" type="button" class="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1">
             <span>🔄</span>
@@ -506,7 +519,7 @@ html, body {
               </div>
             </div>
 
-            <!-- Mode 3 (v10): 60 FPS 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
+            <!-- Mode 3: 60 FPS 3D Interactive Mode (互動模式 · 風車 Pinwheel / 蒲公英 Dandelion) -->
             <div id="interactive-3d-wrapper" class="hidden w-full flex flex-col items-center justify-center mx-auto">
               <div id="interactive-3d-stage" class="bg-pinwheel relative select-none text-slate-100">
                 <!-- Pre-baked Soft Grassland Background (for Dandelion Mode — Zero Real-Time CSS Blur) -->
@@ -516,25 +529,25 @@ html, body {
                 <div id="sun-glow-overlay" class="sun-glow"></div>
 
                 <!-- Top HUD: Status Pill, Mode Switcher & Audio Controls -->
-                <div class="relative z-10 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 pt-3 sm:pt-4 pointer-events-none">
-                  <div class="glass-pill rounded-full px-3.5 py-1.5 flex items-center gap-2 pointer-events-auto">
+                <div class="relative z-10 flex flex-wrap items-center justify-between gap-1.5 px-2.5 sm:px-4 pt-2.5 sm:pt-3 pointer-events-none">
+                  <div class="glass-pill rounded-full px-3 py-1 flex items-center gap-1.5 pointer-events-auto">
                     <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 transition-colors duration-300 shadow-sm"></span>
-                    <span id="status-text" class="text-xs font-medium text-white tracking-wide">微風輕拂 · 靜止輕微晃動</span>
+                    <span id="status-text" class="text-[11px] sm:text-xs font-medium text-white tracking-wide">微風輕拂 · 靜止輕微晃動</span>
                   </div>
 
                   <div class="glass-pill rounded-full p-1 flex items-center gap-1 pointer-events-auto">
-                    <button id="mode-pinwheel-btn" type="button" class="mode-tab active rounded-full px-3 py-1 text-xs text-slate-100 flex items-center gap-1 cursor-pointer">
+                    <button id="mode-pinwheel-btn" type="button" class="mode-tab active rounded-full px-2.5 py-1 text-[11px] sm:text-xs text-slate-100 flex items-center gap-1 cursor-pointer">
                       <span>🌈</span>
                       <span>風車 Pinwheel</span>
                     </button>
-                    <button id="mode-dandelion-btn" type="button" class="mode-tab rounded-full px-3 py-1 text-xs text-slate-200 hover:text-white flex items-center gap-1 cursor-pointer">
+                    <button id="mode-dandelion-btn" type="button" class="mode-tab rounded-full px-2.5 py-1 text-[11px] sm:text-xs text-slate-200 hover:text-white flex items-center gap-1 cursor-pointer">
                       <span>🌼</span>
                       <span>蒲公英 Dandelion</span>
                     </button>
                   </div>
 
-                  <div class="flex items-center gap-2 pointer-events-auto">
-                    <button id="music-toggle-btn" type="button" aria-label="切換背景音樂與音效" class="glass-pill rounded-full px-3 py-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-100 hover:text-white transition-all cursor-pointer active:scale-95">
+                  <div class="flex items-center gap-1.5 pointer-events-auto">
+                    <button id="music-toggle-btn" type="button" aria-label="切換背景音樂與音效" class="glass-pill rounded-full px-2.5 py-1 flex items-center gap-1 text-[11px] sm:text-xs font-medium text-slate-100 hover:text-white transition-all cursor-pointer active:scale-95">
                       <svg id="icon-sound-on" class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"></path>
@@ -549,22 +562,22 @@ html, body {
                 </div>
 
                 <!-- Bottom Motion-Triggered Blowing Status Bar -->
-                <div class="absolute bottom-0 inset-x-0 z-10 pb-3 sm:pb-4 pt-2 px-4 flex flex-col items-center justify-end pointer-events-none">
-                  <div id="speed-meter-wrap" class="w-48 sm:w-60 h-1.5 bg-slate-900/45 rounded-full overflow-hidden mb-2 opacity-0 transition-opacity duration-300 border border-white/20">
+                <div class="absolute bottom-0 inset-x-0 z-10 pb-2.5 sm:pb-3.5 pt-2 px-3 flex flex-col items-center justify-end pointer-events-none">
+                  <div id="speed-meter-wrap" class="w-44 sm:w-56 h-1.5 bg-slate-900/45 rounded-full overflow-hidden mb-1.5 opacity-0 transition-opacity duration-300 border border-white/20">
                     <div id="speed-meter-bar" class="h-full w-0 bg-gradient-to-r from-amber-400 via-emerald-400 to-sky-400 rounded-full transition-none"></div>
                   </div>
 
                   <div class="relative pointer-events-none">
                     <div id="btn-pulse-ring" class="wind-ring absolute inset-0 rounded-full border-2 border-amber-400/75 pointer-events-none hidden"></div>
-                    <div id="spin-hold-btn" class="spin-btn glass-pill relative rounded-full px-5 sm:px-7 py-2.5 flex items-center gap-3 text-white font-medium text-xs sm:text-sm tracking-wide">
-                      <span class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-md shrink-0">
+                    <div id="spin-hold-btn" class="spin-btn glass-pill relative rounded-full px-4 sm:px-6 py-2 flex items-center gap-2.5 text-white font-medium text-xs tracking-wide">
+                      <span class="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-md shrink-0">
                         <svg id="wind-icon" class="w-4 h-4 transition-transform duration-500" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M9.59 4.59A2 2 0 1111 8H2m10.59 11.41A2 2 0 1014 16H2m15.73-8.27A2.5 2.5 0 1119.5 12H2"></path>
                         </svg>
                       </span>
                       <div class="flex flex-col items-start text-left">
                         <span id="btn-main-text" class="font-semibold text-white leading-tight">動作感測吹風旋轉（免按鍵）</span>
-                        <span id="btn-sub-text" class="text-[11px] text-slate-200 leading-tight mt-0.5">合口鼻吸氣＋沉肩放鬆 → 噘唇呼氣即可自動吹動風車</span>
+                        <span id="btn-sub-text" class="text-[10px] sm:text-[11px] text-slate-200 leading-tight mt-0.5">合口鼻吸氣＋沉肩放鬆 → 噘唇呼氣即可自動吹動風車</span>
                       </div>
                     </div>
                   </div>
@@ -641,10 +654,10 @@ html, body {
     </div>
 
     <!-- ========================================== -->
-    <!-- High-Contrast Bottom Feedback Banner -->
+    <!-- Persistent Bottom Feedback Banner (v10.1: Starts as "分析中...", White BG + Orange Text on Alert) -->
     <!-- ========================================== -->
-    <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-teal-200 bg-white/95 text-[#2E7D32]">
-      ✅ 做得非常好，繼續保持！
+    <div id="bottom-banner" class="hidden shrink-0 w-full py-3.5 px-6 text-center z-30 transition-all duration-300 font-extrabold text-xl md:text-2xl leading-snug border-t-2 border-slate-200 bg-white text-slate-500">
+      分析中...
     </div>
 
     <!-- ========================================== -->
@@ -655,7 +668,7 @@ html, body {
         
         <div class="text-center space-y-1.5">
           <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-[#2E7D32]">
-            ✅ 舒呼(SootheBreath) 呼吸復康訓練完成
+            ✅ 舒呼(SootheBreath) 呼吸復康訓練完成（已自動儲存本次個人化校準設定）
           </div>
           <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800">臨床訓練表現摘要報告 (全程平均)</h2>
           <p class="text-slate-500 text-xs md:text-sm">數據已於本機完成匿名化計算，不含生物特徵影像或個人識別個資。</p>
@@ -727,20 +740,20 @@ html, body {
   </main>
 
   <!-- ========================================== -->
-  <!-- Bottom Version Number Remark Footer (v10) -->
+  <!-- Bottom Version Number Remark Footer (v10.1) -->
   <!-- ========================================== -->
   <footer id="app-version-footer" class="w-full py-1.5 px-4 text-center text-xs font-bold text-slate-500 bg-white/85 border-t border-teal-100/80 shrink-0 z-20">
-    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v10
+    舒呼 (SootheBreath) 呼吸復康訓練系統 · 版本備註 (Version)：v10.1
   </footer>
 
   <!-- ========================================== -->
-  <!-- Collapsible Debug Drawer & Backdrop -->
+  <!-- Collapsible Tuning Drawer & Backdrop (v10.1 Req 5: Deleted the word "Debug") -->
   <!-- ========================================== -->
   <div id="debug-backdrop" class="hidden fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40"></div>
   <div id="debug-drawer" class="fixed right-0 top-0 bottom-0 w-80 md:w-96 bg-white/95 backdrop-blur-xl border-l border-teal-100 p-5 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto space-y-4 text-slate-800">
     <div class="flex justify-between items-center border-b border-slate-200 pb-3">
       <h3 class="text-sm font-extrabold text-slate-800 flex items-center gap-2">
-        🛠️ 臨床演算法調試面板 (Debug)
+        🛠️ 臨床演算法調試面板
       </h3>
       <button id="btn-close-debug" type="button" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold flex items-center justify-center cursor-pointer">&times;</button>
     </div>
@@ -900,21 +913,21 @@ html, body {
     <span id="toast-text">操作成功</span>
   </div>
 
-  <!-- Clean old Service Worker caches & register v10 Service Worker -->
+  <!-- Clean old Service Worker caches & register v10.1 Service Worker -->
   <script>
     if ('caches' in window) {
       caches.keys().then(keys => {
         keys.forEach(k => {
-          if (k !== 'soothebreath-v10.0.0') caches.delete(k).catch(() => {});
+          if (k !== 'soothebreath-v10.1.0') caches.delete(k).catch(() => {});
         });
       });
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=10.0')
+        navigator.serviceWorker.register('sw.js?v=10.1')
           .then(reg => {
             reg.update();
-            console.log('舒呼 SootheBreath PWA Service Worker v10 registered:', reg.scope);
+            console.log('舒呼 SootheBreath PWA Service Worker v10.1 registered:', reg.scope);
           })
           .catch(err => console.warn('PWA Service Worker registration failed:', err));
       });
@@ -922,6 +935,6 @@ html, body {
   </script>
 
   <!-- Load ES6 Modular JavaScript Application Entry Point -->
-  <script type="module" src="./app.js?v=10.0"></script>
+  <script type="module" src="./app.js?v=10.1"></script>
 </body>
 </html>

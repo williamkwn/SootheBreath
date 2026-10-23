@@ -1,17 +1,18 @@
 /**
- * 舒呼(SootheBreath) v10 ES6 Module — calibration.js
- * 五步個人化動態基準校準系統 (5-Step Personalized Dynamic Baseline Calibration)
+ * 舒呼(SootheBreath) v10.1 ES6 Module — calibration.js
+ * 五步個人化動態基準校準系統與上次校準設定自動儲存/載入管理 (5-Step Calibration & Saved Settings Persistence)
  *
- * v10 升級重點：
- * - 100% 保持既有五步校準 UI、按鈕互動、固定高度排版與 0-indexed CALIB_STEPS_CONFIG 資料結構。
- * - 於第 1 步【閉嘴】、第 2 步【張大口】、第 3 步【噘唇】背景自動同步採集雙軌內唇基準 (H_inner_closed/open 與 H_center_closed/open)、
- *   外嘴角闊度基準 (W_outer_closed/plb -> MWR_plb)、外唇圓潤長寬比基準 (OLAR_closed/plb) 與俯仰基準 (pitchRatio_closed)。
- * - 於 computeAndSyncDynamicThresholds() 中以統一之 70% 峰值努力折扣公式同步計算 mwrExhaleTarget [0.82, 0.92]、
- *   mwrExhaleHold (mwrExhaleTarget + 0.03) 及 olarRatioTarget [1.12, 1.35]。
+ * v10.1 升級重點：
+ * - 移除視訊畫面前方毛玻璃模糊遮罩，將綠色確認/下一步按鈕移至視訊面板底部，讓使用者於校準前清晰看見面部與肩部。
+ * - 校準完成進入五步個人化基準校準總結頁面時，不播放語音提示。
+ * - 新增 saveCurrentCalibrationSettings()、loadSavedCalibrationSettings() 與 updateContinueLastCalibButtonUI()，
+ *   支援完成一次臨床訓練後自動儲存校準設定，並於主頁提供「繼續使用上次校準設定」免重校準按鈕。
  */
 
 import {
   STATES,
+  LAST_CALIB_STORAGE_KEY,
+  DEFAULT_THRESHOLDS,
   THRESHOLDS,
   DEFAULT_CALIB_BASELINES,
   CALIB_STEPS_CONFIG,
@@ -38,9 +39,145 @@ import { speakText } from './tts.js';
 import { switchViewState, updateDebugReadouts } from './uiControls.js';
 
 // ============================================================================
-// 9. 五步個人化動態基準校準系統 (Section B: 5-Step Personalized Calibration)
+// 9. 五步個人化動態基準校準系統與校準設定持久化 (5-Step Calibration & Persistence)
 // ============================================================================
 let calibLoopRunning = false;
+
+const CALIB_BASELINE_KEYS = [
+  'LAR_closed',
+  'jawOpen_closed',
+  'D_eye',
+  'LAR_open',
+  'jawOpen_open',
+  'LAR_plb',
+  'mouthPucker_plb',
+  'mouthFunnel_plb',
+  'Dist_shrug',
+  'Dist_relax',
+  'dEyeBase',
+  'distBase',
+  'yShoulderBase',
+  'larRest',
+  'H_inner_closed',
+  'H_inner_open',
+  'H_center_closed',
+  'H_center_open',
+  'W_outer_closed',
+  'W_outer_plb',
+  'MWR_plb',
+  'OLAR_closed',
+  'OLAR_plb',
+  'pitchRatio_closed',
+  'zProtrusion_closed'
+];
+
+/**
+ * 自動儲存本次臨床訓練之個人化校準基準與動態閾值設定
+ */
+export function saveCurrentCalibrationSettings() {
+  const cal = AppState.calibration;
+  const savedCalib = {};
+  CALIB_BASELINE_KEYS.forEach((k) => {
+    if (typeof cal[k] === 'number' && !Number.isNaN(cal[k])) {
+      savedCalib[k] = cal[k];
+    } else {
+      savedCalib[k] = DEFAULT_CALIB_BASELINES[k];
+    }
+  });
+
+  const snapshot = {
+    version: 'v10.1',
+    savedAt: new Date().toLocaleString('zh-HK'),
+    calibration: savedCalib,
+    stepSource: { ...(cal.stepSource || { 1: 'default', 2: 'default', 3: 'default', 4: 'default', 5: 'default' }) },
+    stepSampleCounts: { ...(cal.stepSampleCounts || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) },
+    thresholds: { ...THRESHOLDS }
+  };
+
+  AppState.savedCalibrationSnapshot = snapshot;
+  AppState.hasSavedCalibration = true;
+
+  try {
+    localStorage.setItem(LAST_CALIB_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (e) {
+    console.warn('localStorage 校準設定寫入受限:', e);
+  }
+
+  updateContinueLastCalibButtonUI();
+  return snapshot;
+}
+
+/**
+ * 檢查並載入上次儲存之個人化校準設定
+ */
+export function loadSavedCalibrationSettings(applyToActiveState = true) {
+  let snapshot = AppState.savedCalibrationSnapshot;
+  if (!snapshot) {
+    try {
+      const raw = localStorage.getItem(LAST_CALIB_STORAGE_KEY);
+      if (raw) {
+        snapshot = JSON.parse(raw);
+      }
+    } catch (e) {
+      snapshot = null;
+    }
+  }
+
+  if (!snapshot || !snapshot.calibration) {
+    AppState.hasSavedCalibration = false;
+    updateContinueLastCalibButtonUI();
+    return false;
+  }
+
+  AppState.savedCalibrationSnapshot = snapshot;
+  AppState.hasSavedCalibration = true;
+
+  if (applyToActiveState) {
+    CALIB_BASELINE_KEYS.forEach((k) => {
+      if (typeof snapshot.calibration[k] === 'number' && !Number.isNaN(snapshot.calibration[k])) {
+        AppState.calibration[k] = snapshot.calibration[k];
+      }
+    });
+    if (snapshot.stepSource) {
+      AppState.calibration.stepSource = { ...snapshot.stepSource };
+    }
+    if (snapshot.stepSampleCounts) {
+      AppState.calibration.stepSampleCounts = { ...snapshot.stepSampleCounts };
+    }
+    if (snapshot.thresholds) {
+      Object.assign(THRESHOLDS, DEFAULT_THRESHOLDS, snapshot.thresholds);
+      syncThresholdsToDebugDrawer();
+    } else {
+      computeAndSyncDynamicThresholds();
+    }
+  }
+
+  updateContinueLastCalibButtonUI();
+  return true;
+}
+
+/**
+ * 更新主頁「繼續使用上次校準設定」按鈕顯示狀態
+ */
+export function updateContinueLastCalibButtonUI() {
+  if (!dom.btnContinueLastCalib) return;
+  const hasSaved = Boolean(AppState.hasSavedCalibration || AppState.savedCalibrationSnapshot);
+  dom.btnContinueLastCalib.classList.remove('hidden');
+
+  if (hasSaved) {
+    dom.btnContinueLastCalib.disabled = false;
+    dom.btnContinueLastCalib.className = "w-full py-3 px-6 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-900 border-2 border-[#4DB6AC] font-extrabold text-sm md:text-base shadow-sm transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer";
+    if (dom.labelContinueLastCalib) {
+      dom.labelContinueLastCalib.textContent = "繼續使用上次校準設定練習 (免重新校準)";
+    }
+  } else {
+    dom.btnContinueLastCalib.disabled = false;
+    dom.btnContinueLastCalib.className = "w-full py-3 px-6 rounded-2xl bg-teal-50/80 hover:bg-teal-100 text-teal-900 border border-[#4DB6AC]/60 font-bold text-sm md:text-base shadow-xs transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer";
+    if (dom.labelContinueLastCalib) {
+      dom.labelContinueLastCalib.textContent = "繼續使用上次校準設定練習 (免重新校準)";
+    }
+  }
+}
 
 export async function runCalibrationSequence(resetAll = true) {
   if (AppState.calibTimerId) {
@@ -146,7 +283,7 @@ export function clearStepSamplesBuffer() {
 }
 
 /**
- * 進入指定步驟（1–5）之「等待治療師確認」狀態（不自動開始倒數）
+ * 進入指定步驟（1–5）之「等待治療師確認」狀態（無毛玻璃遮罩，確認按鈕位於視訊面板底部）
  */
 export function enterCalibrationStepWaiting(stepNum) {
   if (AppState.calibTimerId) {
@@ -176,10 +313,10 @@ export function enterCalibrationStepWaiting(stepNum) {
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "等待確認";
-    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-teal-800 leading-none h-10 flex items-center justify-center";
+    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-teal-800 leading-none h-9 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
-    dom.calibStepStateLabel.textContent = `請指導病人擺好【${cfg.shortName}】動作，點擊左側視訊畫面中央綠色按鈕開始 3 秒採集`;
+    dom.calibStepStateLabel.textContent = `請指導病人擺好【${cfg.shortName}】動作，點擊左側視訊面板下方綠色按鈕開始 3 秒採集`;
   }
   if (dom.calibStepTimerBarWrap) dom.calibStepTimerBarWrap.classList.add('invisible');
   if (dom.calibStepTimerBar) dom.calibStepTimerBar.style.width = '0%';
@@ -188,7 +325,7 @@ export function enterCalibrationStepWaiting(stepNum) {
     dom.calibStepResultBox.innerHTML = '';
   }
 
-  // 視訊畫面加上毛玻璃模糊遮罩，並於視訊正前方顯示綠色「確定開始採集」按鈕
+  // v10.1: 視訊畫面保持完全清晰無毛玻璃，於視訊面板底部顯示綠色「確定開始採集」按鈕
   if (dom.calibVideoOverlay) {
     dom.calibVideoOverlay.classList.remove('hidden');
   }
@@ -275,10 +412,6 @@ export function startStep3sCountdown() {
 
   updateCalibrationStepperUI(stepIdx, 'COUNTDOWN');
 
-  // 點擊「確定採集」後移除視訊模糊層並隱藏按鈕（倒數期間不顯示「採集數據中」按鈕）
-  if (dom.calibVideoOverlay) {
-    dom.calibVideoOverlay.classList.add('hidden');
-  }
   if (dom.btnCalibConfirmStep) {
     dom.btnCalibConfirmStep.classList.add('hidden');
   }
@@ -291,7 +424,7 @@ export function startStep3sCountdown() {
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "3";
-    dom.calibCountdown.className = "text-3xl md:text-4xl font-black text-[#FF7043] leading-none h-10 flex items-center justify-center";
+    dom.calibCountdown.className = "text-3xl md:text-4xl font-black text-[#FF7043] leading-none h-9 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
     dom.calibStepStateLabel.textContent = `正在採集【${cfg.shortName}】個人基準數據，請保持動作 3 秒...`;
@@ -446,10 +579,10 @@ export function finalizeCurrentCalibrationStep(useDefaultFallback = false) {
 
   if (dom.calibCountdown) {
     dom.calibCountdown.textContent = "完成";
-    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-[#2E7D32] leading-none h-10 flex items-center justify-center";
+    dom.calibCountdown.className = "text-2xl md:text-3xl font-black text-[#2E7D32] leading-none h-9 flex items-center justify-center";
   }
   if (dom.calibStepStateLabel) {
-    dom.calibStepStateLabel.textContent = `第 ${stepIdx} 步採集完成！請點擊左側視訊畫面中央「下一步」繼續，或點擊下方重測`;
+    dom.calibStepStateLabel.textContent = `第 ${stepIdx} 步採集完成！請點擊左側視訊面板下方「下一步」繼續，或點擊下方重測`;
   }
   if (dom.calibStepResultBox) {
     dom.calibStepResultBox.innerHTML = '';
@@ -586,6 +719,7 @@ export function syncThresholdsToDebugDrawer() {
 
 /**
  * 【B.4 五步個人化基準校準總結面板】
+ * v10.1: 進入校準總結畫面時不播放語音提示
  */
 export function showCalibrationConfirmation() {
   computeAndSyncDynamicThresholds();
@@ -689,8 +823,6 @@ export function showCalibrationConfirmation() {
       </div>
     `;
   }
-
-  speakText("五步個人化基準校準完成，請確認數據並點擊開始訓練", true);
 }
 
 /**

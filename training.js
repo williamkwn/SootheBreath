@@ -1,13 +1,13 @@
 /**
- * 舒呼(SootheBreath) v10 ES6 Module — training.js
- * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論、DOM Dirty-Check 節流與 v10 16+4 點幾何演算法對接
+ * 舒呼(SootheBreath) v10.1 ES6 Module — training.js
+ * 實時訓練主迴圈、單一 rAF 整合、MediaPipe 20Hz 交錯推論、DOM Dirty-Check 節流與 v10.1 互動引導雙欄兼容模式
  *
- * v10 核心升級重點：
- * - 100% 保持 v9.1 / v9.4 訓練頁八大 UI/排版/Canvas 函式與 180 個 DOM 節點完整對齊，確保介面與視覺設計零變動。
- * - 於 processFrameDetections() 完整接入 v10 extractV10MouthAndPoseMetrics()、三柱雙層質量過濾與雙軌個人化比例尺 (NOI / NOI_center)。
- * - 修正「70% 呼氣時間柔性過渡 (isSoftTransitioning)」與「3D 互動模式吹風保持」執行順序：
- *   當呼氣已進行 >= 70% 目標時間且有效噘唇佔比 >= 70% 時，尾段自然收氣放鬆（非張大口錯誤、無聳肩）優先進入柔性過渡並豁免 0.20s 強制斷吹，
- *   配合吹氣遲滯保護門檻 (mwrExhaleHold = 0.91)，確保風車與蒲公英於呼氣尾段順暢旋轉至轉入吸氣為止。
+ * v10.1 核心升級重點：
+ * - 將「互動模式 (interactive)」完全整合為「呼吸引導顯示模式 (displayMode)」子項：
+ *   當「相機顯示模式 (privacyMode)」選擇「實時鏡像模式 (mirror)」或「去識別化骨架網格模式 (privacy_mesh)」時，
+ *   保留左側視訊/網格面板可見，並與右側 3D 互動模式同屏運作；當選擇「純引導模式 (minimalist)」時，則採用全屏單欄純引導版面。
+ * - 訓練開始時即常駐顯示底部警示橫幅為「分析中...」，防止數秒後橫幅彈出造成模組走位。
+ * - 支援從主頁「繼續使用上次校準設定」或「免鏡頭預覽」直接跳過校準進入訓練頁面時自動啟動相機與模型。
  */
 
 import {
@@ -28,6 +28,8 @@ import {
   AppState
 } from './state.js';
 import { dom } from './dom.js';
+import { initMediaPipeVision } from './vision.js';
+import { startCamera } from './camera.js';
 import {
   calculateDEye,
   calculateLAR,
@@ -42,21 +44,26 @@ import {
   isPlbExhaleValid,
   generateSimulatedDetections
 } from './cvEngine.js';
-import { speakText } from './tts.js';
+import { speakText, updateVoiceToggleUI } from './tts.js';
 import {
   resetScoringState,
   accumulateFrameScore,
   evaluateCompletedPhase,
   getHighestPriorityAlert
 } from './scoring.js';
-import { evaluateStickyPriorityFeedback } from './feedback.js';
+import {
+  ANALYZING_BANNER_TEXT,
+  renderBottomBanner,
+  evaluateStickyPriorityFeedback
+} from './feedback.js';
 import {
   initInteractive3D,
   disposeInteractive3D,
   switchInteractiveObjectMode,
   startInteractiveBlowing,
   stopInteractiveBlowing,
-  renderInteractive3DFrame
+  renderInteractive3DFrame,
+  resizeInteractive3D
 } from './interactive3d.js';
 import { switchViewState, updateDebugReadouts } from './uiControls.js';
 
@@ -78,9 +85,22 @@ export async function runTrainingSequence() {
     AppState.animFrameId = null;
   }
 
-  if (!AppState.isDemoMode && AppState.stream && dom.trainVideo) {
-    dom.trainVideo.srcObject = AppState.stream;
-    await dom.trainVideo.play().catch(e => console.log(e));
+  // v10.1: 若從「繼續使用上次校準設定」直接進入訓練且尚未開啟相機或載入模型，在此自動啟動
+  if (!AppState.isDemoMode) {
+    if (!AppState.stream || !AppState.stream.active) {
+      const started = await startCamera(dom.trainVideo);
+      if (!started) {
+        switchViewState(STATES.IDLE);
+        return;
+      }
+    } else if (dom.trainVideo) {
+      dom.trainVideo.srcObject = AppState.stream;
+      await dom.trainVideo.play().catch(e => console.log(e));
+    }
+
+    if (!AppState.faceLandmarker || !AppState.poseLandmarker) {
+      await initMediaPipeVision();
+    }
   }
 
   const now = performance.now();
@@ -129,18 +149,18 @@ export async function runTrainingSequence() {
 
   resetScoringState();
 
+  // v10.1: 訓練開始時底部橫幅即常駐顯示「分析中...」，避免 10 秒後彈出造成版面模組走位
   AppState.feedback.latchedModule = null;
-  AppState.feedback.currentPriority = 5;
-  AppState.feedback.currentPMessage = '';
+  AppState.feedback.currentPriority = 0;
+  AppState.feedback.currentPMessage = ANALYZING_BANNER_TEXT;
   AppState.feedback.pendingMessage = '';
-  if (dom.bottomBanner) {
-    dom.bottomBanner.classList.add('hidden');
-  }
+  renderBottomBanner(ANALYZING_BANNER_TEXT, 0);
 
   if (dom.btnPauseTrain) {
     dom.btnPauseTrain.textContent = "⏸️ 暫停訓練";
   }
 
+  updateVoiceToggleUI();
   applyPrivacyModeStyles();
   applyDisplayModeStyles();
   syncCanvasDimensions();
@@ -155,13 +175,16 @@ export async function runTrainingSequence() {
 
 export function syncCanvasDimensions() {
   const mode = AppState.privacyMode;
-  if (dom.visionContainer && dom.trainCanvas && mode !== 'minimalist' && mode !== 'interactive') {
+  if (dom.visionContainer && dom.trainCanvas && mode !== 'minimalist') {
     dom.trainCanvas.width = dom.visionContainer.clientWidth || 640;
     dom.trainCanvas.height = dom.visionContainer.clientHeight || 480;
   }
 }
 
 export function applyPrivacyModeStyles() {
+  if (AppState.privacyMode === 'interactive') {
+    AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+  }
   const mode = AppState.privacyMode;
   if (dom.selectPrivacy && dom.selectPrivacy.value !== mode) {
     dom.selectPrivacy.value = mode;
@@ -172,9 +195,9 @@ export function applyPrivacyModeStyles() {
   if (dom.btnModeMirror) dom.btnModeMirror.className = mode === 'mirror' ? activeCls : inactiveCls;
   if (dom.btnModeMesh) dom.btnModeMesh.className = mode === 'privacy_mesh' ? activeCls : inactiveCls;
   if (dom.btnModeMinimal) dom.btnModeMinimal.className = mode === 'minimalist' ? activeCls : inactiveCls;
-  if (dom.btnModeInteractive) dom.btnModeInteractive.className = mode === 'interactive' ? activeCls : inactiveCls;
 
-  const isSingleColumnGuideLayout = (mode === 'minimalist' || mode === 'interactive');
+  // v10.1: 僅當選擇「純引導模式 (minimalist)」時隱藏視訊面板；Mirror Mode 或 Privacy Mesh Mode 下（包括互動模式）均保持視訊/網格面板可見
+  const isSingleColumnGuideLayout = (mode === 'minimalist');
 
   if (isSingleColumnGuideLayout) {
     if (dom.visionContainer) {
@@ -234,19 +257,23 @@ export function applyPrivacyModeStyles() {
       dom.badgeMeshMode.textContent = "📷 實時鏡像模式 Mirror Mode";
       dom.badgeMeshMode.classList.remove('hidden');
     }
-    setTimeout(syncCanvasDimensions, 50);
   }
+
+  setTimeout(() => {
+    syncCanvasDimensions();
+    resizeInteractive3D();
+  }, 50);
 }
 
 export function applyDisplayModeStyles() {
-  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const isInteractive = (AppState.displayMode === 'interactive');
   const isHuman = (!isInteractive && AppState.displayMode === 'human');
   const isBalloon = (!isInteractive && !isHuman);
   const gender = AppState.humanGender;
   const interObj = AppState.interactiveObject || 'pinwheel';
 
-  const idleActive = "flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
-  const idleInactive = "flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
+  const idleActive = "flex-1 py-2.5 px-3 rounded-xl text-xs font-bold bg-[#2E7D32] text-white shadow-sm transition cursor-pointer";
+  const idleInactive = "flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 border border-slate-200 transition cursor-pointer";
 
   if (dom.btnPacerBalloon) dom.btnPacerBalloon.className = isBalloon ? idleActive : idleInactive;
   if (dom.btnPacerHuman) dom.btnPacerHuman.className = isHuman ? idleActive : idleInactive;
@@ -293,6 +320,7 @@ export function applyDisplayModeStyles() {
     if (AppState.currentState === STATES.TRAINING) {
       initInteractive3D(interObj);
       switchInteractiveObjectMode(interObj);
+      setTimeout(resizeInteractive3D, 50);
     }
   } else {
     disposeInteractive3D();
@@ -346,7 +374,7 @@ export function trainingInferenceLoop() {
     return;
   }
 
-  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const isInteractive = (AppState.displayMode === 'interactive');
   const shouldRunInference = (now - (train.lastInferenceTime || 0)) >= INFERENCE_INTERVAL_MS;
 
   // 1. P0-1 & Fix 4: MediaPipe 推論降頻 (20 FPS) 與單雙幀交錯推論 (傳遞 faceUpdated / poseUpdated 標記)
@@ -401,10 +429,11 @@ export function trainingInferenceLoop() {
   // 2. 呼吸節奏狀態機推進 (P1-2: 互動模式下自動跳過隱藏氣球之 DOM 操作)
   advanceBreathingPacer(now);
 
-  // 3. 繪製視覺 Canvas 或驅動 60 FPS 3D 互動模式渲染 (P0-1: 單一主迴圈整合)
+  // 3. v10.1: 支援 3D 互動模式與左側視訊/骨架網格 Canvas 同屏同步渲染
   if (isInteractive) {
     renderInteractive3DFrame(dt);
-  } else if (AppState.privacyMode !== 'minimalist') {
+  }
+  if (AppState.privacyMode !== 'minimalist') {
     renderTrainingCanvas(AppState.lastFaceResult, AppState.lastPoseResult);
   }
 
@@ -627,7 +656,7 @@ export function processFrameDetections(
     m.inhaleScore = inhaleScore;
   } else {
     // 呼氣階段 (EXHALE)
-    // 1. 優先評估「70% 呼氣時間柔性過渡 (Early Exhale Soft Transition)」(Comment 3 & TC-06)
+    // 1. 優先評估「70% 呼氣時間柔性過渡 (Early Exhale Soft Transition)」
     const phaseElapsed = (now - train.phaseStartTime) / 1000;
     const isOver70Pct = phaseElapsed >= (AppState.exhaleTarget * THRESHOLDS.earlyExhaleRatio);
     const isGoodPlbDuration = (train.tExActual >= (phaseElapsed * 0.70)) && isShoulderRelaxed;
@@ -666,12 +695,10 @@ export function processFrameDetections(
         startInteractiveBlowing();
       }
     } else if (train.isSoftTransitioning && isShoulderRelaxed && isNotWideMouthError) {
-      // TC-06：已達成 70% 呼氣柔性過渡且無張大口/聳肩錯誤，豁免 0.20s 強制斷吹，讓風車/蒲公英維持順暢吹動至轉入吸氣
       train.exhaleInvalidCutoffSec = 0;
     } else {
       train.exhaleInvalidCutoffSec = (train.exhaleInvalidCutoffSec || 0) + dt;
       train.exhaleValidHoldSec = 0;
-      // 若使用者於呼氣中途張大口、停止噘唇或聳肩代償超過 EXHALE_BLOW_CUTOFF_SEC (0.20s)，即刻停止吹風
       if (train.isInteractiveBlowing && train.exhaleInvalidCutoffSec >= EXHALE_BLOW_CUTOFF_SEC) {
         train.isInteractiveBlowing = false;
         stopInteractiveBlowing();
@@ -721,7 +748,7 @@ export function processFrameDetections(
 export function advanceBreathingPacer(now) {
   const train = AppState.training;
   const phaseElapsed = (now - train.phaseStartTime) / 1000;
-  const isInteractive = (AppState.displayMode === 'interactive' || AppState.privacyMode === 'interactive');
+  const isInteractive = (AppState.displayMode === 'interactive');
   const isHuman = (!isInteractive && AppState.displayMode === 'human');
 
   if (train.currentPhase === PHASES.INHALE) {
@@ -862,7 +889,7 @@ export function triggerPhaseSwitch(newPhase) {
   }
 
   const isInhale = newPhase === PHASES.INHALE;
-  const isMinimal = (AppState.privacyMode === "minimalist" || AppState.privacyMode === "interactive");
+  const isMinimal = (AppState.privacyMode === "minimalist");
   if (dom.pacerBall) {
     dom.pacerBall.className = `w-32 h-32 md:w-36 md:h-36 ${isMinimal ? "pure-guiding-ball " : ""}rounded-full ${isInhale ? "pacer-inhale-style" : "pacer-exhale-style"} flex flex-col items-center justify-center text-white font-bold transition-transform duration-100`;
   }
@@ -993,7 +1020,7 @@ export function renderTrainingCanvas(faceResults, poseResults) {
   const canvas = dom.trainCanvas;
   if (!canvas) return;
   const mode = AppState.privacyMode;
-  if (mode === 'minimalist' || mode === 'interactive') return;
+  if (mode === 'minimalist') return;
 
   const ctx = canvas.getContext('2d');
   const w = canvas.width;

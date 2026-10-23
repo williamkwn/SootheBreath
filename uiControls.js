@@ -1,20 +1,25 @@
 /**
- * 舒呼(SootheBreath) v9 ES6 Module — uiControls.js
- * 狀態機視圖切換、臨床調試面板 (Debug Drawer) 與全域 UI 事件監聽器 (含 v9 互動模式切換與資源釋放)
+ * 舒呼(SootheBreath) v10.1 ES6 Module — uiControls.js
+ * 狀態機視圖切換、臨床調試面板與全域 UI 事件監聽器 (含上次校準設定快速續練、免鏡頭直接進入訓練、人聲靜音與互動引導解耦)
  */
 
 import { STATES, DEFAULT_THRESHOLDS, THRESHOLDS, AppState } from './state.js';
 import { dom, showToast } from './dom.js';
 import { stopCamera } from './camera.js';
-import { speakText } from './tts.js';
+import { speakText, toggleVoiceMute } from './tts.js';
+import { ANALYZING_BANNER_TEXT, renderBottomBanner } from './feedback.js';
 import {
   runCalibrationSequence,
   enterCalibrationStepWaiting,
   startStep3sCountdown,
   finalizeCurrentCalibrationStep,
   advanceToNextCalibrationStepOrSummary,
+  computeAndSyncDynamicThresholds,
   syncThresholdsToDebugDrawer,
-  showCalibrationConfirmation
+  showCalibrationConfirmation,
+  saveCurrentCalibrationSettings,
+  loadSavedCalibrationSettings,
+  updateContinueLastCalibButtonUI
 } from './calibration.js';
 import {
   runTrainingSequence,
@@ -65,6 +70,7 @@ export function switchViewState(targetState) {
     case STATES.IDLE:
       dom.stateIdle.classList.remove('hidden');
       stopCamera();
+      updateContinueLastCalibButtonUI();
       break;
 
     case STATES.CALIBRATING:
@@ -74,7 +80,7 @@ export function switchViewState(targetState) {
 
     case STATES.TRAINING:
       dom.stateTrain.classList.remove('hidden');
-      dom.bottomBanner.classList.add('hidden');
+      renderBottomBanner(ANALYZING_BANNER_TEXT, 0);
       runTrainingSequence();
       break;
 
@@ -87,7 +93,7 @@ export function switchViewState(targetState) {
 }
 
 // ============================================================================
-// 12. 調試面板與使用者介面監聽器 (Debug Drawer & Event Listeners)
+// 12. 調試面板與使用者介面監聽器
 // ============================================================================
 export function updateDebugReadouts() {
   const m = AppState.currentMetrics;
@@ -160,16 +166,15 @@ export function updatePacingCalculationsUI() {
 }
 
 /**
- * 啟用互動模式（同步設定單欄純引導版面與 3D 互動場景）
+ * v10.1: 啟用互動模式（屬於「呼吸引導顯示模式 displayMode」，保留當前「相機顯示模式 privacyMode」不變）
  */
 export function activateInteractiveMode(subObject = AppState.interactiveObject || 'pinwheel') {
-  if (AppState.privacyMode !== 'interactive') {
-    AppState.lastNonInteractivePrivacyMode = AppState.privacyMode;
-  }
   if (AppState.displayMode !== 'interactive') {
     AppState.lastNonInteractiveDisplayMode = AppState.displayMode;
   }
-  AppState.privacyMode = 'interactive';
+  if (AppState.privacyMode === 'interactive') {
+    AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
+  }
   AppState.displayMode = 'interactive';
   AppState.interactiveObject = subObject;
   applyPrivacyModeStyles();
@@ -210,21 +215,14 @@ export function setupEventListeners() {
     });
   }
 
-  // 4. 相機與訓練版面模式選擇 (含 v9 互動模式)
+  // 4. 相機顯示模式選擇 (Mirror Mode / Privacy Mesh Mode / Pure Guiding Mode — 與呼吸引導模式完全獨立解耦)
   if (dom.selectPrivacy) {
     dom.selectPrivacy.addEventListener('change', (e) => {
       const val = e.target.value;
-      if (val === 'interactive') {
-        activateInteractiveMode(AppState.interactiveObject);
-      } else {
-        AppState.privacyMode = val;
-        AppState.lastNonInteractivePrivacyMode = val;
-        if (AppState.displayMode === 'interactive') {
-          AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
-        }
-        applyPrivacyModeStyles();
-        applyDisplayModeStyles();
-      }
+      AppState.privacyMode = val;
+      AppState.lastNonInteractivePrivacyMode = val;
+      applyPrivacyModeStyles();
+      applyDisplayModeStyles();
     });
   }
 
@@ -232,9 +230,6 @@ export function setupEventListeners() {
     dom.btnModeMirror.addEventListener('click', () => {
       AppState.privacyMode = 'mirror';
       AppState.lastNonInteractivePrivacyMode = 'mirror';
-      if (AppState.displayMode === 'interactive') {
-        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
@@ -243,9 +238,6 @@ export function setupEventListeners() {
     dom.btnModeMesh.addEventListener('click', () => {
       AppState.privacyMode = 'privacy_mesh';
       AppState.lastNonInteractivePrivacyMode = 'privacy_mesh';
-      if (AppState.displayMode === 'interactive') {
-        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
@@ -254,9 +246,6 @@ export function setupEventListeners() {
     dom.btnModeMinimal.addEventListener('click', () => {
       AppState.privacyMode = 'minimalist';
       AppState.lastNonInteractivePrivacyMode = 'minimalist';
-      if (AppState.displayMode === 'interactive') {
-        AppState.displayMode = AppState.lastNonInteractiveDisplayMode || 'balloon';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
@@ -273,9 +262,6 @@ export function setupEventListeners() {
     dom.btnPacerBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
       AppState.lastNonInteractiveDisplayMode = 'balloon';
-      if (AppState.privacyMode === 'interactive') {
-        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
@@ -284,9 +270,6 @@ export function setupEventListeners() {
     dom.btnPacerHuman.addEventListener('click', () => {
       AppState.displayMode = 'human';
       AppState.lastNonInteractiveDisplayMode = 'human';
-      if (AppState.privacyMode === 'interactive') {
-        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
     });
@@ -323,14 +306,11 @@ export function setupEventListeners() {
     });
   }
 
-  // 訓練中快速切換氣球 / 男性 / 女性 / 互動模式
+  // 訓練中快速切換氣球 / 男性 / 女性 / 互動模式 (保留當前相機顯示模式)
   if (dom.btnTrainBalloon) {
     dom.btnTrainBalloon.addEventListener('click', () => {
       AppState.displayMode = 'balloon';
       AppState.lastNonInteractiveDisplayMode = 'balloon';
-      if (AppState.privacyMode === 'interactive') {
-        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("🎈 已切換至氣球模式");
@@ -341,9 +321,6 @@ export function setupEventListeners() {
       AppState.displayMode = 'human';
       AppState.lastNonInteractiveDisplayMode = 'human';
       AppState.humanGender = 'male';
-      if (AppState.privacyMode === 'interactive') {
-        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("👨 已切換至真人示範（男性）");
@@ -354,9 +331,6 @@ export function setupEventListeners() {
       AppState.displayMode = 'human';
       AppState.lastNonInteractiveDisplayMode = 'human';
       AppState.humanGender = 'female';
-      if (AppState.privacyMode === 'interactive') {
-        AppState.privacyMode = AppState.lastNonInteractivePrivacyMode || 'privacy_mesh';
-      }
       applyPrivacyModeStyles();
       applyDisplayModeStyles();
       showToast("👩 已切換至真人示範（女性）");
@@ -366,6 +340,20 @@ export function setupEventListeners() {
     dom.btnTrainInteractive.addEventListener('click', () => {
       activateInteractiveMode(AppState.interactiveObject);
       showToast(`🎡 已切換至互動模式（${AppState.interactiveObject === 'dandelion' ? '蒲公英' : '風車'}）`);
+    });
+  }
+
+  // v10.1: 訓練頁人聲靜音按鈕與頂部語音狀態欄切換
+  if (dom.btnToggleVoice) {
+    dom.btnToggleVoice.addEventListener('click', () => {
+      const enabled = toggleVoiceMute();
+      showToast(enabled ? "🔊 已開啟人聲語音導航" : "🔇 已靜音人聲語音導航");
+    });
+  }
+  if (dom.headerVoiceBadge) {
+    dom.headerVoiceBadge.addEventListener('click', () => {
+      const enabled = toggleVoiceMute();
+      showToast(enabled ? "🔊 已開啟人聲語音導航" : "🔇 已靜音人聲語音導航");
     });
   }
 
@@ -393,18 +381,34 @@ export function setupEventListeners() {
     });
   }
 
-  // 啟動真實相機訓練 -> 進入五步個人化動態基準校準
+  // 準備練習 -> 進入五步個人化動態基準校準
   dom.btnStart.addEventListener('click', () => {
     AppState.isDemoMode = false;
     switchViewState(STATES.CALIBRATING);
   });
 
-  // 啟動免鏡頭模擬預覽訓練 -> 進入五步個人化動態基準校準
+  // v10.1 (1a): 繼續使用上次校準設定開始練習 (免重新校準直接進入訓練頁)
+  if (dom.btnContinueLastCalib) {
+    dom.btnContinueLastCalib.addEventListener('click', () => {
+      AppState.isDemoMode = false;
+      const loaded = loadSavedCalibrationSettings(true);
+      if (loaded) {
+        showToast("⚡ 已載入上次校準設定，免重新校準直接開始練習");
+      } else {
+        computeAndSyncDynamicThresholds();
+        showToast("⚡ 已套用標準校準設定，直接開始練習");
+      }
+      switchViewState(STATES.TRAINING);
+    });
+  }
+
+  // v10.1 (1e): 免鏡頭預覽 -> 點擊後直接跳過所有校準並進入訓練頁面測試
   if (dom.btnStartDemo) {
     dom.btnStartDemo.addEventListener('click', () => {
       AppState.isDemoMode = true;
-      showToast("🧪 已啟動免鏡頭五步校準與互動模擬模式");
-      switchViewState(STATES.CALIBRATING);
+      computeAndSyncDynamicThresholds();
+      showToast("🧪 已啟動免鏡頭預覽，略過校準直接進入訓練頁面");
+      switchViewState(STATES.TRAINING);
     });
   }
 
@@ -450,6 +454,7 @@ export function setupEventListeners() {
   // 五步校準總結畫面按鈕
   if (dom.btnConfirmStart) {
     dom.btnConfirmStart.addEventListener('click', () => {
+      saveCurrentCalibrationSettings();
       speakText("個人化基準已鎖定，現在開始呼吸訓練", true);
       switchViewState(STATES.TRAINING);
     });
@@ -529,7 +534,7 @@ export function setupEventListeners() {
     dom.debugBackdrop.addEventListener('click', closeDebugDrawer);
   }
 
-  // Debug Drawer 閾值滑桿雙向同步
+  // 調試面板閾值滑桿雙向同步
   if (dom.dbgRangeLarInMax) {
     dom.dbgRangeLarInMax.addEventListener('input', (e) => {
       THRESHOLDS.larInhaleMax = parseFloat(e.target.value);
@@ -602,8 +607,9 @@ export function setupEventListeners() {
     dom.btnModalDemo.addEventListener('click', () => {
       dom.modalError.classList.add('hidden');
       AppState.isDemoMode = true;
-      showToast("🧪 已切換至免鏡頭模擬訓練模式");
-      switchViewState(STATES.CALIBRATING);
+      computeAndSyncDynamicThresholds();
+      showToast("🧪 已切換至免鏡頭模擬訓練模式，直接進入訓練頁面");
+      switchViewState(STATES.TRAINING);
     });
   }
 }

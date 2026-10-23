@@ -1,16 +1,20 @@
 /**
- * 舒呼(SootheBreath) v8.0 ES6 Module — summary.js
- * 訓練總結報告生成、去識別化 CSV 匯出與本機歷史紀錄 (Summary Report, CSV Export & Local History)
+ * 舒呼(SootheBreath) v10.1 ES6 Module — summary.js
+ * 訓練總結報告生成、自動儲存本次校準設定、去識別化 CSV 匯出與本機歷史紀錄
  */
 
 import { THRESHOLDS, AppState } from './state.js';
 import { dom, showToast } from './dom.js';
 import { speakText } from './tts.js';
+import { saveCurrentCalibrationSettings } from './calibration.js';
 
 // ============================================================================
-// 11. 總結報告生成與 CSV 匯出 (Section 5 Summary & CSV Export — 維持計算全程總平均)
+// 11. 總結報告生成與 CSV 匯出 (Section 5 Summary & CSV Export — 完成訓練自動儲存本次校準設定)
 // ============================================================================
 export function renderSummaryReport() {
+  // v10.1: 當完成一次臨床訓練進入總結頁面時，自動儲存本次訓練之個人化校準設定供下次免重校準直接練習
+  saveCurrentCalibrationSettings();
+
   const train = AppState.training;
   const totalSecs = Math.max(1, Math.round(train.elapsedSeconds));
   const completedCycles = train.cyclesHistory.length;
@@ -68,7 +72,7 @@ export function exportDeidentifiedCSV() {
   const shoulderAcc = train.totalShoulderFrames > 0 ? Math.round((train.validShoulderFrames / train.totalShoulderFrames) * 100) : 96;
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v9.4) — 匿名臨床數據報表 ===\n";
+  csvContent += "=== 舒呼(SootheBreath) 呼吸復康訓練 (v10.1) — 匿名臨床數據報表 ===\n";
   csvContent += `訓練日期,${dateStr}\n`;
   csvContent += `訓練時間,${timeStr}\n`;
   csvContent += `總訓練秒數,${Math.round(train.elapsedSeconds)}\n`;
@@ -98,7 +102,7 @@ export function exportDeidentifiedCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `SootheBreath_v6_Report_${dateStr}.csv`);
+  link.setAttribute("download", `SootheBreath_v10.1_Report_${dateStr}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -175,4 +179,3 @@ export function loadAndRenderLocalHistory() {
     </div>
   `).join('');
 }
-

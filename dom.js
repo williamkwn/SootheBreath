@@ -1,5 +1,5 @@
 /**
- * 舒呼(SootheBreath) v9 ES6 Module — dom.js
+ * 舒呼(SootheBreath) v10.1 ES6 Module — dom.js
  * DOM 元素快取與非阻塞式提示通知 (DOM Element References & Toast Utility)
  */
 
@@ -19,6 +19,9 @@ export function cacheDomElements() {
     appVersionFooter: document.getElementById('app-version-footer'),
     toast: document.getElementById('toast-notification'),
     toastText: document.getElementById('toast-text'),
+    headerVoiceBadge: document.getElementById('header-voice-badge'),
+    headerVoiceIcon: document.getElementById('header-voice-icon'),
+    headerVoiceText: document.getElementById('header-voice-text'),
 
     // 設定面板 1：目標吸呼時間與呼吸頻率 (STATE_IDLE)
     inputBpm: document.getElementById('input-bpm'),
@@ -32,7 +35,7 @@ export function cacheDomElements() {
     inputDuration: document.getElementById('input-duration'),
     valDurationMins: document.getElementById('val-duration-mins'),
 
-    // 設定面板 2：顯示模式 (STATE_IDLE — 支援氣球、真人示範與 v9 互動模式)
+    // 設定面板 2：顯示模式 (STATE_IDLE — 相機顯示模式置於呼吸引導顯示模式上方)
     selectPrivacy: document.getElementById('select-privacy-mode'),
     btnPacerBalloon: document.getElementById('btn-pacer-balloon'),
     btnPacerHuman: document.getElementById('btn-pacer-human'),
@@ -44,6 +47,8 @@ export function cacheDomElements() {
     btnInteractivePinwheel: document.getElementById('btn-interactive-pinwheel'),
     btnInteractiveDandelion: document.getElementById('btn-interactive-dandelion'),
     btnStart: document.getElementById('btn-start'),
+    btnContinueLastCalib: document.getElementById('btn-continue-last-calib'),
+    labelContinueLastCalib: document.getElementById('label-continue-last-calib'),
     btnStartDemo: document.getElementById('btn-start-demo'),
 
     // 五步個人化動態基準校準系統元件 (STATE_CALIBRATING)
@@ -91,7 +96,7 @@ export function cacheDomElements() {
     trainCanvas: document.getElementById('train-canvas'),
     badgeMeshMode: document.getElementById('badge-mesh-mode'),
 
-    // 訓練畫面頂部狀態與右上角控制按鈕 (含 v9 互動模式按鈕)
+    // 訓練畫面頂部狀態與右上角控制按鈕 (含人聲靜音按鈕與互動模式按鈕)
     pillPhase: document.getElementById('pill-phase'),
     pillCycle: document.getElementById('pill-cycle'),
     valCycleCount: document.getElementById('val-cycle-count'),
@@ -105,9 +110,12 @@ export function cacheDomElements() {
     btnTrainMale: document.getElementById('btn-train-male'),
     btnTrainFemale: document.getElementById('btn-train-female'),
     btnTrainInteractive: document.getElementById('btn-train-interactive'),
+    btnToggleVoice: document.getElementById('btn-toggle-voice'),
+    iconVoiceToggle: document.getElementById('icon-voice-toggle'),
+    labelVoiceToggle: document.getElementById('label-voice-toggle'),
     btnTrainRecalibrate: document.getElementById('btn-train-recalibrate'),
 
-    // 呼吸節奏球、真人示範與 v9 3D 互動模式 (風車 / 蒲公英) 元件
+    // 呼吸節奏球、真人示範與 3D 互動模式 (風車 / 蒲公英) 元件
     pacerVisualArea: document.getElementById('pacer-visual-area'),
     pacerOuterRing: document.getElementById('pacer-outer-ring'),
     pacerBall: document.getElementById('pacer-ball'),
@@ -174,7 +182,7 @@ export function cacheDomElements() {
     sumGrade: document.getElementById('sum-grade'),
     listHistory: document.getElementById('list-history'),
 
-    // 調試面板 (Debug Drawer)
+    // 調試面板
     btnToggleDebug: document.getElementById('btn-toggle-debug'),
     btnCloseDebug: document.getElementById('btn-close-debug'),
     debugDrawer: document.getElementById('debug-drawer'),

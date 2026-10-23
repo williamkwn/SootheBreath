@@ -1,14 +1,11 @@
 /**
- * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v10)
+ * 舒呼(SootheBreath) 呼吸復康訓練 — 實時呼吸視覺生物反饋系統 (PWA v10.1)
  * ESM Core Engine: MediaPipe Tasks Vision 0.10.14 + Three.js 3D Interactive Mode (60 FPS Optimized)
  *
- * v10 核心升級重點：
- * - 完整保留 v8_ES / v9 / v9.1 / v9.4 穩定版之 CALIB_STEPS_CONFIG (0-indexed Array)、DEFAULT_CALIB_BASELINES、
- *   180 個 DOM 結構對齊與 P0–P2 60 FPS 渲染管線，確保應用程式介面與視覺設計 100% 零變動。
- * - 新增 v10「16+4 點純 2D 幾何主導 + 三柱穩健質量過濾 + 圓唇縮寬複合演算法」動態閾值與雙軌校準基準：
- *   1. 吸氣三柱穩健基準 (H_inner_closed / H_inner_open -> NOI) 與呼氣中柱專屬基準 (H_center_closed / H_center_open -> NOI_center)。
- *   2. 外嘴角收窄比 MWR 統一目標門檻 (mwrExhaleTarget 預設 0.88，動態範圍 [0.82, 0.92])、吹氣保持遲滯門檻 (mwrExhaleHold 預設 0.91) 與未收窄上限 (mwrExhaleMax = 0.97)。
- *   3. 外唇圓潤長寬比提升目標 (olarRatioTarget 預設 1.18)、中央氣孔守門員 (noiExhaleMin = 0.025) 與遮擋恢復平滑計數器。
+ * v10.1 核心升級重點：
+ * - 完整保留 v10 16+4 點純 2D 幾何主導唇環演算法、三柱穩健質量過濾、雙軌個人化比例尺 (NOI / NOI_center) 與 P0–P2 60 FPS 渲染管線。
+ * - 新增臨床訓練完成後自動儲存個人化校準設定 (LAST_CALIB_STORAGE_KEY) 與主頁「繼續使用上次校準設定」免重校準快速啟動狀態管理。
+ * - 將「互動模式 (interactive)」完全整合為「呼吸引導顯示模式 (displayMode)」子模式，與「相機顯示模式 (privacyMode: mirror / privacy_mesh / minimalist)」獨立解耦，支援於實時鏡像或骨架網格模式下同時顯示左側視訊/網格面板與右側 3D 互動模式。
  */
 
 // ============================================================================
@@ -25,6 +22,8 @@ export const PHASES = {
   INHALE: 'INHALE',
   EXHALE: 'EXHALE'
 };
+
+export const LAST_CALIB_STORAGE_KEY = 'soothebreath_saved_calib_v10_1';
 
 // 預設臨床推薦閾值 (Default Clinical Thresholds — 用於初始化與「恢復預設推薦閾值」)
 export const DEFAULT_THRESHOLDS = {
@@ -64,7 +63,7 @@ export const DEFAULT_THRESHOLDS = {
   yawSideFilterDeg: 15.0       // 側臉單側內唇柱剔除與外嘴角半闊度補償門檻 (|yawDeg| > 15°)
 };
 
-// 全域動態臨床閾值 (由五步個人化基準校準或 Debug Drawer 動態更新)
+// 全域動態臨床閾值 (由五步個人化基準校準或調試面板動態更新)
 export const THRESHOLDS = { ...DEFAULT_THRESHOLDS };
 
 // 五步個人化動態基準校準之臨床預設值 (Fallback Defaults)
@@ -167,7 +166,7 @@ export const HUMAN_IMAGES = {
   }
 };
 
-// 訓練開局緩衝期、門檻、v9.1 效能節流常數與 v9.2/v9.4/v10 互動吹風/實時警示常數
+// 訓練開局緩衝期、門檻、效能節流常數與互動吹風/實時警示常數
 export const ROLLING_WINDOW_SECONDS = 20.0;
 export const INITIAL_GRACE_SECONDS = 10.0;       // 前 10 秒開局緩衝期
 export const PHASE_ENTRY_GRACE_MS = 400;         // 吸呼雙向階段切換前 400ms 生理反應緩衝期
@@ -235,12 +234,16 @@ export const AppState = {
   animFrameId: null,
   isCalibConfirming: false,
 
+  // v10.1 新增：自動儲存上次完成臨床訓練之個人化校準設定狀態
+  hasSavedCalibration: false,
+  savedCalibrationSnapshot: null,
+
   targetBpm: 10,
   ieRatio: 2,
   inhaleTarget: 2.0,
   exhaleTarget: 4.0,
   totalDuration: 120,
-  privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist' | 'interactive'
+  privacyMode: 'privacy_mesh', // 'mirror' | 'privacy_mesh' | 'minimalist'
   lastNonInteractivePrivacyMode: 'privacy_mesh',
   displayMode: 'balloon',      // 'balloon' | 'human' | 'interactive'
   lastNonInteractiveDisplayMode: 'balloon',
@@ -473,9 +476,9 @@ export const AppState = {
       shoulder: false,
       rr: false
     },
-    currentPMessage: '持續保持',
-    currentPriority: 5,
-    pendingPriority: 5,
+    currentPMessage: '分析中...',
+    currentPriority: 0,
+    pendingPriority: 0,
     pendingMessage: '',
     pendingTimestamp: 0,
     debounceMs: 800

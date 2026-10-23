@@ -1584,6 +1584,13 @@ export function initInteractive3D(initialSubMode = AppState.interactiveObject ||
   return true;
 }
 
+export function resizeInteractive3D() {
+  if (typeof resizeListener === "function") {
+    resizeListener();
+    renderInteractive3DFrame(0.016);
+  }
+}
+
 export function toggleInteractiveAudioMute() {
   if (!audioEngine) return false;
   const isPlaying = audioEngine.toggleMute();
